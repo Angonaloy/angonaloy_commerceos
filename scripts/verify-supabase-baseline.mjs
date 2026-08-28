@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -10,10 +11,11 @@ import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const migrationPath = join(
-  root,
-  "supabase/migrations/20260828000000_canonical_schema_reconciliation.sql",
-);
+const migrationsDir = join(root, "supabase/migrations");
+const migrationPaths = readdirSync(migrationsDir)
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .map((name) => join(migrationsDir, name));
 
 function commandPath(name) {
   const configuredBin = process.env.PG_BINDIR;
@@ -88,8 +90,8 @@ begin
   select count(*) into runtime_table_count
   from pg_class
   where relnamespace = 'public'::regnamespace and relkind = 'r';
-  if runtime_table_count <> 18 then
-    raise exception 'Expected 18 runtime tables, found %', runtime_table_count;
+  if runtime_table_count <> 19 then
+    raise exception 'Expected 19 runtime tables, found %', runtime_table_count;
   end if;
 
   select count(*) into rls_table_count
@@ -116,6 +118,25 @@ begin
   if has_table_privilege('authenticated', 'public.orders', 'select') then
     raise exception 'authenticated browser role can select orders';
   end if;
+  if not exists (
+    select 1
+    from pg_class as c
+    where c.relnamespace = 'public'::regnamespace
+      and c.relname = 'warehouses'
+      and c.relkind = 'r'
+      and c.relrowsecurity
+  ) then
+    raise exception 'warehouses is missing or does not have RLS enabled';
+  end if;
+  if has_table_privilege('anon', 'public.warehouses', 'select,insert,update,delete') then
+    raise exception 'anon can access warehouses';
+  end if;
+  if has_table_privilege('authenticated', 'public.warehouses', 'select,insert,update,delete') then
+    raise exception 'authenticated can access warehouses';
+  end if;
+  if not has_table_privilege('service_role', 'public.warehouses', 'select,insert,update,delete') then
+    raise exception 'service_role lacks warehouse table privileges';
+  end if;
   if has_function_privilege('anon', 'public.current_user_org_id()', 'execute') then
     raise exception 'anon can execute current_user_org_id';
   end if;
@@ -129,6 +150,15 @@ begin
   end if;
   if has_function_privilege('authenticated', 'public.current_user_org_id()', 'execute') then
     raise exception 'authenticated can execute current_user_org_id';
+  end if;
+  if has_function_privilege('anon', 'public.set_default_warehouse(uuid, uuid)', 'execute') then
+    raise exception 'anon can execute set_default_warehouse';
+  end if;
+  if has_function_privilege('authenticated', 'public.set_default_warehouse(uuid, uuid)', 'execute') then
+    raise exception 'authenticated can execute set_default_warehouse';
+  end if;
+  if not has_function_privilege('service_role', 'public.set_default_warehouse(uuid, uuid)', 'execute') then
+    raise exception 'service_role cannot execute set_default_warehouse';
   end if;
   if not has_table_privilege('service_role', 'public.meta_connections', 'select,insert,update,delete') then
     raise exception 'service_role lacks server-table privileges';
@@ -213,12 +243,14 @@ function verifyFreshDatabase(runNumber) {
 
     const connection = ["-X", "-v", "ON_ERROR_STOP=1", "-h", socketDirectory, "postgres"];
     run(psql, [...connection, "-c", bootstrapSql], { stdio: "pipe" });
-    writeFileSync(
-      migrationCopy,
-      localCompatibleSql(readFileSync(migrationPath, "utf8")),
-      "utf8",
-    );
-    run(psql, [...connection, "-f", migrationCopy], { stdio: "pipe" });
+    for (const migrationPath of migrationPaths) {
+      writeFileSync(
+        migrationCopy,
+        localCompatibleSql(readFileSync(migrationPath, "utf8")),
+        "utf8",
+      );
+      run(psql, [...connection, "-f", migrationCopy], { stdio: "pipe" });
+    }
     run(psql, [...connection, "-c", assertionSql], { stdio: "pipe" });
     run(psql, [...connection, "-c", rlsBehaviorSql], { stdio: "pipe" });
     process.stdout.write(`Baseline reset ${runNumber}: passed\n`);
