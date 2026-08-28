@@ -49,6 +49,36 @@ describe("order routing wiring", () => {
     expect(resolver.match(/if \(error\) throw error;/g)).toHaveLength(3);
   });
 
+  it("only scans unresolved named items and paginates every org-scoped fallback candidate", () => {
+    const resolver = sectionBetween(
+      "async function resolveOrderRouting",
+      'app.get("/api/warehouses"',
+    );
+    const candidateLookup = resolver.slice(resolver.indexOf("const resolvedProductForItem"));
+
+    expect(candidateLookup).toContain("const resolvedProductForItem = (item) => {");
+    expect(candidateLookup).toContain(
+      "const directProduct = item.productId ? productsById[item.productId] : null;",
+    );
+    expect(candidateLookup).toContain("if (directProduct) return directProduct;");
+    expect(candidateLookup).toContain(
+      "const variantProductId = item.variantId ? variantsById[item.variantId]?.product_id : null;",
+    );
+    expect(candidateLookup).toContain(
+      "return variantProductId ? productsById[variantProductId] || null : null;",
+    );
+    expect(candidateLookup).toContain(
+      "const unresolvedNamedItems = list.filter((item) => !resolvedProductForItem(item));",
+    );
+    expect(candidateLookup).toContain("const pageSize = 500;");
+    expect(candidateLookup).toContain("for (let from = 0; ; from += pageSize) {");
+    expect(candidateLookup).toContain("const to = from + pageSize - 1;");
+    expect(candidateLookup).toContain('.order("id", { ascending: true })');
+    expect(candidateLookup).toContain(".range(from, to)");
+    expect(candidateLookup).toContain("const rows = data || [];");
+    expect(candidateLookup).toContain("if (rows.length < pageSize) break;");
+  });
+
   it("matches social product names in JavaScript without selecting an arbitrary duplicate", () => {
     const resolver = sectionBetween(
       "async function resolveOrderRouting",
@@ -74,6 +104,7 @@ describe("order routing wiring", () => {
     expect(resolver).toMatch(
       /const routingItems = list\.map\(\(item\) => \{[\s\S]*?const matchedProduct =[\s\S]*?productId: matchedProduct\.id/,
     );
+    expect(resolver).toContain("const matchedProduct = resolvedProductForItem(item) ||");
     expect(resolver).toContain(
       "computeOrderWeightKg({ items: routingItems, variantsById, productsById })",
     );
@@ -115,8 +146,11 @@ describe("order routing wiring", () => {
     );
 
     expect(socialCapture).toContain("const items = [");
+    expect(socialCapture).toContain("variant_id: order.variant_id || null");
     expect(socialCapture).toContain("await resolveOrderRouting(");
     expect(socialCapture).toContain("productName: item.product");
+    expect(socialCapture).toContain("variantId: item.variant_id || undefined");
+    expect(socialCapture).not.toContain("variantId: order.variant_id");
     expect(socialCapture).toContain("warehouse_id: routing.warehouseId");
     expect(socialCapture).toContain("warehouse_auto: true");
     expect(socialCapture).toContain("weight_kg: routing.weightKg");

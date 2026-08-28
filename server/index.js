@@ -7137,13 +7137,18 @@ async function saveMetaInboxOrder({ supabase, orgId, platform, conversation, con
     `Source: ${platform} AI auto-capture`,
   ].join("\n");
 
-  const items = [{ product: order.product_name, quantity: order.quantity, unit_price: order.unit_price }];
+  const items = [{
+    product: order.product_name,
+    quantity: order.quantity,
+    unit_price: order.unit_price,
+    variant_id: order.variant_id || null,
+  }];
   const routing = await resolveOrderRouting(
     supabase,
     orgId,
     items.map((item) => ({
       productName: item.product,
-      variantId: order.variant_id || undefined,
+      variantId: item.variant_id || undefined,
       quantity: item.quantity,
     })),
   );
@@ -8551,29 +8556,44 @@ async function resolveOrderRouting(supabase, orgId, items) {
     for (const product of data || []) productsById[product.id] = product;
   }
 
+  const resolvedProductForItem = (item) => {
+    const directProduct = item.productId ? productsById[item.productId] : null;
+    if (directProduct) return directProduct;
+    const variantProductId = item.variantId ? variantsById[item.variantId]?.product_id : null;
+    return variantProductId ? productsById[variantProductId] || null : null;
+  };
+
   // Social captures supply product names rather than catalog IDs. Fetch only
   // this org's candidates, then accept a name only when it has one match.
+  const unresolvedNamedItems = list.filter((item) => !resolvedProductForItem(item));
   const normalizedNames = new Set(
-    list
-      .filter((item) => !item.productId || !productsById[item.productId])
+    unresolvedNamedItems
       .map((item) => normalizeOrderProductName(item.productName ?? item.product))
       .filter(Boolean),
   );
   const productsByName = Object.create(null);
   if (normalizedNames.size > 0) {
-    const { data, error } = await supabase
-      .from("products")
-      .select("id, name, weight_kg, warehouse_id")
-      .eq("org_id", orgId);
-    if (error) throw error;
-
     const matchesByName = new Map();
-    for (const product of data || []) {
-      const normalizedName = normalizeOrderProductName(product.name);
-      if (!normalizedNames.has(normalizedName)) continue;
-      const matches = matchesByName.get(normalizedName) || [];
-      matches.push(product);
-      matchesByName.set(normalizedName, matches);
+    const pageSize = 500;
+    for (let from = 0; ; from += pageSize) {
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from("products")
+        .select("id, name, weight_kg, warehouse_id")
+        .eq("org_id", orgId)
+        .order("id", { ascending: true })
+        .range(from, to);
+      if (error) throw error;
+
+      const rows = data || [];
+      for (const product of rows) {
+        const normalizedName = normalizeOrderProductName(product.name);
+        if (!normalizedNames.has(normalizedName)) continue;
+        const matches = matchesByName.get(normalizedName) || [];
+        matches.push(product);
+        matchesByName.set(normalizedName, matches);
+      }
+      if (rows.length < pageSize) break;
     }
     for (const [normalizedName, matches] of matchesByName) {
       if (matches.length !== 1) continue;
@@ -8585,8 +8605,7 @@ async function resolveOrderRouting(supabase, orgId, items) {
   // Give a verified social name its canonical ID before weight calculation.
   const routingItems = list.map((item) => {
     const normalizedName = normalizeOrderProductName(item.productName ?? item.product);
-    const matchedProduct =
-      (item.productId && productsById[item.productId]) ||
+    const matchedProduct = resolvedProductForItem(item) ||
       productsByName[normalizedName] ||
       null;
     if (!matchedProduct || item.productId === matchedProduct.id) return item;
