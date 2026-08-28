@@ -8694,7 +8694,7 @@ app.get("/api/warehouses/:id", async (req, res) => {
       stock_quantity: product.stock_quantity,
       weight_kg: product.weight_kg,
       published: product.published,
-      assigned_explicitly: product.warehouse_id === warehouseId,
+      assigned_explicitly: product.warehouse_id === warehouse.id,
     }));
 
     return res.json({

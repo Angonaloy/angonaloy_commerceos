@@ -40,7 +40,11 @@ describe("warehouse detail API", () => {
     expect(detailRoute).toContain("const includeUnassigned = warehouse.is_default === true");
     expect(detailRoute).toContain("warehouse_id.is.null");
     expect(detailRoute).toContain('query.eq("warehouse_id", warehouseId)');
-    expect(detailRoute).toContain("assigned_explicitly: product.warehouse_id === warehouseId");
+  });
+
+  it("marks explicit assignments against the canonical warehouse ID, not raw route input", () => {
+    expect(detailRoute).toContain("assigned_explicitly: product.warehouse_id === warehouse.id");
+    expect(detailRoute).not.toContain("assigned_explicitly: product.warehouse_id === warehouseId");
   });
 
   it("keeps the detail product query org-scoped and returns the required summary", () => {
