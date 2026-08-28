@@ -14,6 +14,7 @@ import { computeOrderCogs } from "./cog.js";
 import { buildOverviewData } from "./overview.js";
 import { buildSalesTrend } from "./salesTrend.js";
 import { calculateShippingCost } from "./shippingCalculation.js";
+import { computeOrderWeightKg, resolveWarehouseId } from "./warehouseRouting.js";
 import { buildCustomers, summarizeCustomers } from "./customers.js";
 import { toPublicProduct, toPublicInventoryEntry, PublicInventoryResponseSchema, PublicInventoryEntrySchema } from "./publicCatalog.js";
 import {
@@ -7136,6 +7137,17 @@ async function saveMetaInboxOrder({ supabase, orgId, platform, conversation, con
     `Source: ${platform} AI auto-capture`,
   ].join("\n");
 
+  const items = [{ product: order.product_name, quantity: order.quantity, unit_price: order.unit_price }];
+  const routing = await resolveOrderRouting(
+    supabase,
+    orgId,
+    items.map((item) => ({
+      productName: item.product,
+      variantId: order.variant_id || undefined,
+      quantity: item.quantity,
+    })),
+  );
+
   const { data, error } = await supabase
     .from("social_inbox_orders")
     .insert({
@@ -7144,11 +7156,14 @@ async function saveMetaInboxOrder({ supabase, orgId, platform, conversation, con
       platform,
       contact_name: order.customer_name,
       contact_id: contactId,
-      items: [{ product: order.product_name, quantity: order.quantity, unit_price: order.unit_price }],
+      items,
       notes,
       total_price: totalPrice,
       delivery_rate: deliveryRate,
       status: "pending",
+      warehouse_id: routing.warehouseId,
+      warehouse_auto: true,
+      weight_kg: routing.weightKg,
     })
     .select("*")
     .single();
@@ -8482,6 +8497,114 @@ async function getActiveWarehouse(supabase, orgId, warehouseId) {
   return data;
 }
 
+async function getDefaultWarehouseId(supabase, orgId) {
+  const { data, error } = await supabase
+    .from("warehouses")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("is_default", true)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
+function normalizeOrderProductName(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+// Resolves a new order once so its stored warehouse and weight remain an
+// immutable creation-time snapshot rather than changing with catalog edits.
+async function resolveOrderRouting(supabase, orgId, items) {
+  const list = Array.isArray(items) ? items : [];
+  const defaultWarehouseId = await getDefaultWarehouseId(supabase, orgId);
+  if (list.length === 0) {
+    return { warehouseId: defaultWarehouseId, warehouseAuto: true, weightKg: null };
+  }
+
+  const variantIds = [...new Set(list.map((item) => item.variantId).filter(Boolean))];
+  const variantsById = Object.create(null);
+  if (variantIds.length > 0) {
+    const { data, error } = await supabase
+      .from("product_variants")
+      .select("id, product_id, weight_kg")
+      .in("id", variantIds)
+      .eq("org_id", orgId);
+    if (error) throw error;
+    for (const variant of data || []) variantsById[variant.id] = variant;
+  }
+
+  const productIds = [
+    ...new Set([
+      ...list.map((item) => item.productId).filter(Boolean),
+      ...Object.values(variantsById).map((variant) => variant.product_id).filter(Boolean),
+    ]),
+  ];
+  const productsById = Object.create(null);
+  if (productIds.length > 0) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, name, weight_kg, warehouse_id")
+      .in("id", productIds)
+      .eq("org_id", orgId);
+    if (error) throw error;
+    for (const product of data || []) productsById[product.id] = product;
+  }
+
+  // Social captures supply product names rather than catalog IDs. Fetch only
+  // this org's candidates, then accept a name only when it has one match.
+  const normalizedNames = new Set(
+    list
+      .filter((item) => !item.productId || !productsById[item.productId])
+      .map((item) => normalizeOrderProductName(item.productName ?? item.product))
+      .filter(Boolean),
+  );
+  const productsByName = Object.create(null);
+  if (normalizedNames.size > 0) {
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, name, weight_kg, warehouse_id")
+      .eq("org_id", orgId);
+    if (error) throw error;
+
+    const matchesByName = new Map();
+    for (const product of data || []) {
+      const normalizedName = normalizeOrderProductName(product.name);
+      if (!normalizedNames.has(normalizedName)) continue;
+      const matches = matchesByName.get(normalizedName) || [];
+      matches.push(product);
+      matchesByName.set(normalizedName, matches);
+    }
+    for (const [normalizedName, matches] of matchesByName) {
+      if (matches.length !== 1) continue;
+      productsByName[normalizedName] = matches[0];
+      productsById[matches[0].id] ||= matches[0];
+    }
+  }
+
+  // Give a verified social name its canonical ID before weight calculation.
+  const routingItems = list.map((item) => {
+    const normalizedName = normalizeOrderProductName(item.productName ?? item.product);
+    const matchedProduct =
+      (item.productId && productsById[item.productId]) ||
+      productsByName[normalizedName] ||
+      null;
+    if (!matchedProduct || item.productId === matchedProduct.id) return item;
+    return { ...item, productId: matchedProduct.id };
+  });
+
+  return {
+    warehouseId: resolveWarehouseId({
+      items: routingItems,
+      productsById,
+      productsByName,
+      defaultWarehouseId,
+    }),
+    warehouseAuto: true,
+    weightKg: computeOrderWeightKg({ items: routingItems, variantsById, productsById }),
+  };
+}
+
 app.get("/api/warehouses", async (req, res) => {
   try {
     const { user } = await getUser(getToken(req));
@@ -9088,7 +9211,7 @@ async function handlePublicHandleOrderSubmit(req, res) {
     // Fetch all variants + their parent products in one pass
     const { data: variants, error: vErr } = await supabase
       .from("product_variants")
-      .select("id, product_id, org_id, attributes, price_adjustment, stock_quantity")
+      .select("id, product_id, org_id, attributes, price_adjustment, stock_quantity, weight_kg")
       .in("id", variantIds)
       .eq("org_id", orgId);
     if (vErr) throw vErr;
@@ -9100,7 +9223,7 @@ async function handlePublicHandleOrderSubmit(req, res) {
     const productIds = [...new Set(Object.values(variantMap).map((v) => v.product_id))];
     const { data: products, error: pErr } = await supabase
       .from("products")
-      .select("id, name, selling_price, published")
+      .select("id, name, selling_price, published, weight_kg, warehouse_id")
       .in("id", productIds)
       .eq("org_id", orgId)
       .eq("published", true);
@@ -9175,6 +9298,8 @@ async function handlePublicHandleOrderSubmit(req, res) {
       })
       .join(", ");
 
+    const routing = await resolveOrderRouting(supabase, orgId, orderItems);
+
     // ── Insert order ─────────────────────────────────────────────────────
     const orderSeq = await getNextManualOrderSeq(orgId);
     const orderNumber = `#S${orderSeq}`;
@@ -9193,6 +9318,9 @@ async function handlePublicHandleOrderSubmit(req, res) {
       delivery_rate: shipping,
       status: "pending",
       source: "storefront",
+      warehouse_id: routing.warehouseId,
+      warehouse_auto: true,
+      weight_kg: routing.weightKg,
       notes: notes || null,
     };
 
