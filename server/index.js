@@ -8473,7 +8473,7 @@ async function getActiveWarehouse(supabase, orgId, warehouseId) {
   if (!warehouseId) return null;
   const { data, error } = await supabase
     .from("warehouses")
-    .select("id, name, address, contact_person, phone, is_default")
+    .select("id, name, address, contact_person, phone, is_default, created_at")
     .eq("id", warehouseId)
     .eq("org_id", orgId)
     .is("deleted_at", null)
@@ -8659,6 +8659,92 @@ app.delete("/api/warehouses/:id", async (req, res) => {
       .eq("warehouse_id", warehouseId);
     if (productsError) throw productsError;
     return res.json({ success: true });
+  } catch (err) {
+    return sendWarehouseError(res, err);
+  }
+});
+
+app.get("/api/warehouses/:id", async (req, res) => {
+  try {
+    const { user } = await getUser(getToken(req));
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const warehouseId = req.params.id;
+    if (!isValidWarehouseId(warehouseId)) return res.status(400).json({ error: "Invalid warehouse ID" });
+    const supabase = getServiceSupabase();
+    const { orgId } = await getUserOrg(supabase, user.id);
+    const warehouse = await getActiveWarehouse(supabase, orgId, warehouseId);
+    if (!warehouse) return res.status(404).json({ error: "Warehouse not found" });
+
+    const includeUnassigned = warehouse.is_default === true;
+    let query = supabase
+      .from("products")
+      .select("id, name, selling_price, stock_quantity, weight_kg, published, warehouse_id")
+      .eq("org_id", orgId)
+      .order("name", { ascending: true });
+    query = includeUnassigned
+      ? query.or(`warehouse_id.eq.${warehouseId},warehouse_id.is.null`)
+      : query.eq("warehouse_id", warehouseId);
+
+    const { data: rows, error } = await query;
+    if (error) throw error;
+    const products = (rows || []).map((product) => ({
+      id: product.id,
+      name: product.name,
+      selling_price: product.selling_price,
+      stock_quantity: product.stock_quantity,
+      weight_kg: product.weight_kg,
+      published: product.published,
+      assigned_explicitly: product.warehouse_id === warehouseId,
+    }));
+
+    return res.json({
+      warehouse,
+      summary: {
+        product_count: products.length,
+        total_stock: products.reduce((sum, product) => sum + (Number(product.stock_quantity) || 0), 0),
+        published_count: products.filter((product) => product.published === true).length,
+      },
+      products,
+    });
+  } catch (err) {
+    return sendWarehouseError(res, err);
+  }
+});
+
+app.post("/api/products/bulk-assign-warehouse", async (req, res) => {
+  try {
+    const { user } = await getUser(getToken(req));
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const body = req.body;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return res.status(400).json({ error: "Invalid warehouse assignment input" });
+    }
+
+    const productIds = body.product_ids;
+    if (!Array.isArray(body.product_ids) || productIds.length === 0 || !productIds.every(isValidWarehouseId)) {
+      return res.status(400).json({ error: "product_ids must be a non-empty array of UUID strings" });
+    }
+
+    const warehouseId = body.warehouse_id;
+    if (warehouseId !== null && !isValidWarehouseId(warehouseId)) {
+      return res.status(400).json({ error: "warehouse_id must be a UUID string or null" });
+    }
+
+    const supabase = getServiceSupabase();
+    const { orgId } = await getUserOrg(supabase, user.id);
+    if (warehouseId !== null) {
+      const warehouse = await getActiveWarehouse(supabase, orgId, warehouseId);
+      if (!warehouse) return res.status(404).json({ error: "Warehouse not found" });
+    }
+
+    const { data, error } = await supabase
+      .from("products")
+      .update({ warehouse_id: warehouseId })
+      .eq("org_id", orgId)
+      .in("id", productIds)
+      .select("id");
+    if (error) throw error;
+    return res.json({ updated: (data || []).length });
   } catch (err) {
     return sendWarehouseError(res, err);
   }
