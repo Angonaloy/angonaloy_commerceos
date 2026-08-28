@@ -6,8 +6,9 @@ const MAIN_WH = "22222222-2222-2222-2222-222222222222";
 
 const PRODUCTS = {
   "p-tshirt": { id: "p-tshirt", name: "Cotton T-Shirt", warehouse_id: MAIN_WH, weight_kg: 0.3 },
-  "p-mango": { id: "p-mango", name: "Kacha Aam", warehouse_id: MANGO_WH, weight_kg: null },
+  "p-mango": { id: "p-mango", name: "Kacha Aam", warehouse_id: MANGO_WH, weight_kg: 2 },
   "p-none": { id: "p-none", name: "Gift Box", warehouse_id: null, weight_kg: 1 },
+  "p-unknown-weight": { id: "p-unknown-weight", name: "Unknown Weight", warehouse_id: MAIN_WH, weight_kg: null },
 };
 const BY_NAME = {
   "cotton t-shirt": PRODUCTS["p-tshirt"],
@@ -28,8 +29,10 @@ const args = (items) => ({
 });
 
 describe("resolveWarehouseId", () => {
-  it("uses the product id when the item carries one", () => {
-    expect(resolveWarehouseId(args([{ productId: "p-mango", quantity: 1 }]))).toBe(MANGO_WH);
+  it("prefers the product id over a conflicting normalized name", () => {
+    expect(
+      resolveWarehouseId(args([{ productId: "p-mango", product: "  COTTON T-SHIRT ", quantity: 1 }])),
+    ).toBe(MANGO_WH);
   });
 
   it("falls back to a case-insensitive name match", () => {
@@ -66,7 +69,7 @@ describe("resolveWarehouseId", () => {
 const weightArgs = (items) => ({ items, variantsById: VARIANTS, productsById: PRODUCTS });
 
 describe("computeOrderWeightKg", () => {
-  it("prefers the variant weight over the product weight", () => {
+  it("prefers the variant weight over its known parent product weight", () => {
     expect(computeOrderWeightKg(weightArgs([{ variantId: "v-5kg", productId: "p-mango", quantity: 1 }]))).toBe(5);
   });
 
@@ -83,8 +86,8 @@ describe("computeOrderWeightKg", () => {
     ).toBe(2.3);
   });
 
-  it("falls back to the product weight when the variant has none", () => {
-    expect(computeOrderWeightKg(weightArgs([{ variantId: "v-noweight", productId: "p-mango" }]))).toBeNull();
+  it("falls back to the known parent product weight when the variant has none", () => {
+    expect(computeOrderWeightKg(weightArgs([{ variantId: "v-noweight", productId: "p-mango" }]))).toBe(2);
   });
 
   it("treats a missing quantity as one", () => {
@@ -95,7 +98,7 @@ describe("computeOrderWeightKg", () => {
     expect(
       computeOrderWeightKg(weightArgs([
         { productId: "p-tshirt", quantity: 1 },
-        { productId: "p-mango", quantity: 1 },
+        { productId: "p-unknown-weight", quantity: 1 },
       ])),
     ).toBeNull();
   });
