@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import SteadfastLogo from "@/components/SteadfastLogo";
 import PathaoLogo from "@/components/PathaoLogo";
@@ -31,6 +33,7 @@ import { AlertTriangle, CheckCircle2, Clock3, HelpCircle, ShieldAlert, ShieldChe
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { formatTooltipProductLine } from "@/lib/orderItemDisplay";
 import { generateInvoice, printInvoice } from "@/utils/invoiceGenerator";
 import { useOrgName } from "@/hooks/useOrgName";
 import { Spinner } from "@/components/ui/ios-spinner";
@@ -42,11 +45,6 @@ function splitProductLines(product: string | null): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-}
-
-function hasInlineQty(line: string): boolean {
-  // Matches "3x Item" or "3× Item" (case-insensitive)
-  return /^\d+\s*(x|×)\s+/i.test(line);
 }
 
 function OrderStatusIcon({ status }: { status: string }) {
@@ -87,17 +85,28 @@ function orderStatusClasses(status: string, selected = false) {
     : "border-amber-200/80 bg-amber-50 text-amber-700 shadow-amber-950/5 hover:border-amber-300 hover:bg-amber-100";
 }
 
-function formatProductLine(line: string, fallbackQty: number | null | undefined): string {
-  if (!line) return "—";
-  if (hasInlineQty(line)) return line;
-  if (fallbackQty && fallbackQty > 0) return `${line} ×${fallbackQty}`;
-  return line;
+function displayVariant(value: string | null) {
+  if (!value) return "";
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (parsed && typeof parsed === "object") return Object.values(parsed).filter(Boolean).join(" · ");
+  } catch {
+    // Legacy order items may already contain a display value.
+  }
+  return value;
 }
 
-function productSummary(order: Order): { primary: string; moreCount: number; lines: string[] } {
+function productSummary(order: Order): { primary: string; moreCount: number; lines: string[]; names: string[] } {
+  if (order.items?.length) {
+    const lines = order.items.map((item) => {
+      const variant = displayVariant(item.variant_name);
+      return `${item.product_name || "Legacy item"}${variant ? ` · ${variant}` : ""} · ×${item.quantity}`;
+    });
+    return { primary: lines[0], moreCount: Math.max(0, lines.length - 1), lines, names: order.items.map((item) => item.product_name || "Legacy item") };
+  }
   const lines = splitProductLines(order.product);
   if (lines.length === 0) {
-    return { primary: "—", moreCount: 0, lines: [] };
+    return { primary: "—", moreCount: 0, lines: [], names: [] };
   }
 
   // Legacy single-item rows used to store quantity separately; keep that behavior.
@@ -106,7 +115,7 @@ function productSummary(order: Order): { primary: string; moreCount: number; lin
       ? formatProductLine(lines[0], order.quantity)
       : formatProductLine(lines[0], undefined);
 
-  return { primary, moreCount: Math.max(0, lines.length - 1), lines };
+  return { primary, moreCount: Math.max(0, lines.length - 1), lines, names: lines.map((line) => line.replace(/^\d+\s*(x|×)\s+/i, "")) };
 }
 
 interface FraudData {
@@ -144,6 +153,13 @@ interface Order {
   courier_message?: string | null;
   notes?: string | null;
   fulfillment_status?: string | null;
+  items?: OrderItemSummary[];
+}
+
+interface OrderItemSummary {
+  product_name: string | null;
+  variant_name: string | null;
+  quantity: number;
 }
 
 interface OrdersTableProps {
@@ -490,6 +506,18 @@ function NotesPopover({ order, onOrderUpdate }: { order: Order; onOrderUpdate?: 
 }
 
 export function OrdersTable({ orders, loading, onStatusUpdate, onOrderUpdate }: OrdersTableProps) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const prefetchOrder = (orderId: string) => queryClient.prefetchQuery({
+    queryKey: [`/api/orders/${orderId}`],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await apiFetch(`/api/orders/${orderId}`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Failed to load order");
+      return json;
+    },
+  });
   const { orgName } = useOrgName();
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
@@ -1064,13 +1092,29 @@ export function OrdersTable({ orders, loading, onStatusUpdate, onOrderUpdate }: 
         </TableHeader>
         <TableBody>
             {orders.map((order, idx) => {
-              const { primary, moreCount, lines } = productSummary(order);
+              const { primary, lines, names } = productSummary(order);
 
               return (
                 <TableRow
                   key={order.id}
+                  tabIndex={0}
+                  aria-label={`Open order ${order.order_number}`}
+                  onMouseEnter={() => prefetchOrder(order.id)}
+                  onFocus={() => prefetchOrder(order.id)}
+                  onClick={(event) => {
+                    const target = event.target as HTMLElement;
+                    if (target.closest("button, a, input, textarea, select, [role='button'], [data-row-interactive='true']")) return;
+                    navigate(`/orders/${order.id}`);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    const target = event.target as HTMLElement;
+                    if (target.closest("button, a, input, textarea, select, [role='button'], [data-row-interactive='true']")) return;
+                    event.preventDefault();
+                    navigate(`/orders/${order.id}`);
+                  }}
                   className={cn(
-                    "border-b border-[#F1F1F2] transition-all duration-200 group relative",
+                    "border-b border-[#F1F1F2] transition-all duration-200 group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/20 focus-visible:ring-inset",
                     selectedIds.has(order.id)
                       ? "bg-blue-50/60 hover:bg-blue-50/80"
                       : "hover:bg-black/[0.015]"
@@ -1078,6 +1122,7 @@ export function OrdersTable({ orders, loading, onStatusUpdate, onOrderUpdate }: 
                 >
                   <TableCell className="w-10 py-3 pl-4">
                     <div
+                      data-row-interactive="true"
                       onClick={() => toggleSelectOrder(order.id)}
                       className={cn(
                         "w-[18px] h-[18px] rounded-[5px] border-[1.5px] flex items-center justify-center cursor-pointer transition-all duration-200",
@@ -1182,15 +1227,10 @@ export function OrdersTable({ orders, loading, onStatusUpdate, onOrderUpdate }: 
                   <TableCell className="max-w-[160px] py-3">
                     <Tooltip delayDuration={0}>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center gap-1 group/prod cursor-default min-w-0">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-blue-400 group-hover/prod:text-blue-500 transition-colors"><g fill="none" stroke="currentColor" strokeWidth="1.2"><rect width="14" height="17" x="5" y="4" fill="currentColor" fillOpacity=".25" rx="2"/><path strokeLinecap="round" d="M9 9h6m-6 4h6m-6 4h4"/></g></svg>
-                          <div className="text-xs tracking-tight text-black truncate">
-                            <span className="font-medium">{primary}</span>
-                            {moreCount > 0 && (
-                              <span className="ml-1.5 px-1 py-0.5 bg-black/5 rounded text-[9px] font-bold">+{moreCount}</span>
-                            )}
-                          </div>
-                        </div>
+                         <div data-testid="order-items-preview" aria-label={`${lines.length || 0} order items`} className="flex items-center gap-1.5 group/prod cursor-default min-w-0">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 text-blue-400 group-hover/prod:text-blue-500 transition-colors"><g fill="none" stroke="currentColor" strokeWidth="1.2"><rect width="14" height="17" x="5" y="4" fill="currentColor" fillOpacity=".25" rx="2"/><path strokeLinecap="round" d="M9 9h6m-6 4h6m-6 4h4"/></g></svg>
+                           <div className="min-w-0 space-y-0.5 text-xs font-medium leading-tight text-black">{names.length ? names.map((name, index) => <p key={index} className="max-w-[170px] truncate">{name}</p>) : <p>{primary}</p>}</div>
+                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[300px] p-0 overflow-hidden rounded-2xl border border-black/10 bg-white/95 shadow-2xl shadow-black/10 backdrop-blur-xl">
                         <div className="border-b border-black/[0.06] px-3.5 py-2.5 flex items-center justify-between gap-2">
@@ -1212,7 +1252,7 @@ export function OrdersTable({ orders, loading, onStatusUpdate, onOrderUpdate }: 
                               <div key={index} className="px-3.5 py-2 flex items-start gap-2.5">
                                 <span className="mt-0.5 h-4 w-4 rounded-lg bg-black/[0.05] text-black/40 text-[9px] font-bold flex items-center justify-center shrink-0">{index + 1}</span>
                                 <p className="text-xs text-foreground leading-relaxed">
-                                  {lines.length === 1 ? formatProductLine(line, order.quantity) : line}
+                                  {formatTooltipProductLine(line, Boolean(order.items?.length), order.quantity)}
                                 </p>
                               </div>
                             ))

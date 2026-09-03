@@ -24,6 +24,14 @@ import {
   validateStorefrontHandle,
 } from "./storefrontHandle.js";
 import { AI_ACTION_TOOLS, askUserTool, buildRecommendation, executeAiAction } from "./ai-actions.js";
+import {
+  PRODUCT_IMAGE_CACHE_SECONDS,
+  buildProductImageBuffers,
+  createProductImageAssetPaths,
+  getProductImagePathsForCleanup,
+  getProductImageVariantPaths,
+} from "./productImages.js";
+import { buildProductCacheUrls, purgeProductCacheUrls } from "./productCache.js";
 
 // ─── AI provider (OpenAI-compatible, supports OpenRouter and any
 //     OpenAI-compatible gateway like GMI Cloud) ─────────────────────────────
@@ -1169,7 +1177,7 @@ async function getStorefrontHandle(orgId) {
 // Enterprise-only); Cache-Tag headers still ship so the future switch is a
 // config change, not a code change. Failures log + drop — the outbox
 // replay job is a separate plan.
-async function purgeProductCache(orgId, productId, { listChanged = false, warm = true } = {}) {
+async function purgeProductCache(orgId, product, { listChanged = false, warm = true, inventoryIds = [] } = {}) {
   if (!CLOUDFLARE_ZONE_ID || !CLOUDFLARE_API_TOKEN || !PUBLIC_DOMAIN) {
     if (process.env.NODE_ENV !== "test") {
       console.warn("[Purge] Cloudflare not configured — skipping purge");
@@ -1177,44 +1185,28 @@ async function purgeProductCache(orgId, productId, { listChanged = false, warm =
     return;
   }
   const handle = await getStorefrontHandle(orgId);
-  if (!handle) return;
-
-  const urls = [];
-  if (productId) {
-    urls.push(`https://${PUBLIC_DOMAIN}/api/public/v1/${handle}/products/${productId}`);
-    urls.push(`https://${PUBLIC_DOMAIN}/api/public/v1/${handle}/products/${productId}/inventory`);
-  }
-  if (listChanged) {
-    urls.push(`https://${PUBLIC_DOMAIN}/api/public/v1/${handle}/products`);
-  }
+  const urls = buildProductCacheUrls({
+    publicDomain: PUBLIC_DOMAIN,
+    orgId,
+    handle,
+    productSlug: product?.slug,
+    listChanged,
+    inventoryIds,
+  });
+  if (!urls.length) return;
 
   try {
-    const response = await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${CLOUDFLARE_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ files: urls }),
-      },
-    );
-    if (!response.ok) {
-      const body = await response.text();
-      console.warn(`[Purge] Cloudflare purge failed: ${body}`);
-    } else {
-      console.log(`[Purge] Purged ${urls.length} URL(s) for org ${orgId} product ${productId || "*"}`);
+    const result = await purgeProductCacheUrls({
+      zoneId: CLOUDFLARE_ZONE_ID,
+      apiToken: CLOUDFLARE_API_TOKEN,
+      urls,
+      warmToken: warm ? WARM_TOKEN : "",
+    });
+    if (result.purged) {
+      console.log(`[Purge] Purged ${urls.length} URL(s) for org ${orgId} product ${product?.id || "*"}`);
     }
   } catch (e) {
     console.warn("[Purge] Cloudflare purge error:", e.message);
-  }
-
-  if (warm && WARM_TOKEN) {
-    const warmHeaders = { headers: { "X-Warm-Token": WARM_TOKEN } };
-    for (const url of urls) {
-      fetch(url, warmHeaders).catch(() => {});
-    }
   }
 }
 
@@ -1344,7 +1336,7 @@ async function loadProductImagesMap(supabase, orgId, productIds) {
   if (!productIds.length) return {};
   const { data, error } = await supabase
     .from("product_images")
-    .select("id, product_id, image_url, alt_text, sort_order, is_primary, created_at")
+    .select("id, product_id, image_url, storage_path, alt_text, sort_order, is_primary, created_at")
     .eq("org_id", orgId)
     .in("product_id", productIds)
     .order("sort_order", { ascending: true })
@@ -1353,9 +1345,19 @@ async function loadProductImagesMap(supabase, orgId, productIds) {
   const map = {};
   for (const image of data || []) {
     if (!map[image.product_id]) map[image.product_id] = [];
+    const variantPaths = getProductImageVariantPaths(image.storage_path);
+    const sources = variantPaths
+      ? Object.fromEntries(
+          Object.entries(variantPaths).map(([width, path]) => [
+            width,
+            supabase.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(path).data.publicUrl,
+          ]),
+        )
+      : undefined;
     map[image.product_id].push({
       id: image.id,
       url: image.image_url,
+      ...(sources ? { sources } : {}),
       alt_text: image.alt_text || null,
       sort_order: image.sort_order || 0,
       is_primary: image.is_primary === true,
@@ -1397,12 +1399,6 @@ function parseProductImagePayload(file) {
     throw err;
   }
   return { buffer, mimeType };
-}
-
-function productImageExtension(mimeType) {
-  if (mimeType === "image/png") return "png";
-  if (mimeType === "image/webp") return "webp";
-  return "jpg";
 }
 
 function slugifyProductName(value = "") {
@@ -2394,7 +2390,7 @@ async function purgeStorefrontConfigCache(orgId) {
 
 const VERCEL_ACCESS_TOKEN = process.env.VERCEL_ACCESS_TOKEN || "";
 const STOREFRONT_VERCEL_TEAM_ID = process.env.STOREFRONT_VERCEL_TEAM_ID || "";
-const STOREFRONT_GIT_REPO = process.env.STOREFRONT_GIT_REPO || ""; // e.g. "noorkarimmehedi/e-commerce"
+const STOREFRONT_GIT_REPO = process.env.STOREFRONT_GIT_REPO || ""; // e.g. "mangoloverbd/mangoloverbd_storefront"
 // The public URL of THIS Merchant Suite deploy, baked into every auto-provisioned
 // storefront so it reads catalog + posts orders back here.
 const MERCHANT_SUITE_PUBLIC_URL = (process.env.MERCHANT_SUITE_PUBLIC_URL || process.env.PUBLIC_DOMAIN || "").replace(/\/$/, "");
@@ -2480,7 +2476,7 @@ async function syncStorefrontDomain(projectId, prevDomain, newDomain) {
 // env vars, trigger a production deploy, and persist the project id for this merchant.
 async function provisionStorefrontProject(orgId, customOrdersApiKey) {
   if (!VERCEL_ACCESS_TOKEN) return { ok: false, error: "VERCEL_ACCESS_TOKEN not set" };
-  if (!STOREFRONT_GIT_REPO) return { ok: false, error: "STOREFRONT_GIT_REPO not set (e.g. noorkarimmehedi/e-commerce)" };
+  if (!STOREFRONT_GIT_REPO) return { ok: false, error: "STOREFRONT_GIT_REPO not set (e.g. mangoloverbd/mangoloverbd_storefront)" };
   if (!MERCHANT_SUITE_PUBLIC_URL) return { ok: false, error: "MERCHANT_SUITE_PUBLIC_URL not set — the public URL of this Merchant Suite deploy" };
 
   const projectName = `storefront-${orgId.slice(0, 8)}`;
@@ -5254,8 +5250,19 @@ app.get("/api/orders", async (req, res) => {
     if (error) throw error;
 
     const allOrders = allData || [];
-
-    const orders = allOrders;
+    const orderIds = allOrders.map((order) => order.id).filter(Boolean);
+    const { data: orderItems, error: itemsError } = orderIds.length
+      ? await supabase.from("order_items").select("order_id, product_id, variant_id, product_name, variant_name, unit_price, quantity").in("order_id", orderIds).eq("org_id", orgId).order("created_at", { ascending: true })
+      : { data: [], error: null };
+    if (itemsError) throw itemsError;
+    const enrichedItems = await enrichOrderItems(supabase, orgId, orderItems || []);
+    const itemsByOrder = new Map();
+    for (const item of enrichedItems) {
+      const list = itemsByOrder.get(item.order_id) || [];
+      list.push(item);
+      itemsByOrder.set(item.order_id, list);
+    }
+    const orders = allOrders.map((order) => ({ ...order, items: itemsByOrder.get(order.id) || [] }));
 
     console.log(`[Orders] total=${allOrders.length}`);
     return res.json({ orders });
@@ -5280,6 +5287,236 @@ app.get("/api/orders/recent-notifications", async (req, res) => {
 
     if (error) throw error;
     return res.json({ orders: data || [] });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+function isOrderDispatched(order) {
+  return Boolean(
+    order.sent_to_courier ||
+    order.consignment_id ||
+    order.tracking_code ||
+    order.courier_status,
+  );
+}
+
+function variantDisplay(attributes) {
+  return Object.values(attributes || {}).filter(Boolean).join(" · ") || null;
+}
+
+async function enrichOrderItems(supabase, orgId, items) {
+  if (!items.length) return items;
+  const variantIds = [...new Set(items.map((item) => item.variant_id).filter(Boolean))];
+  const productIds = [...new Set(items.map((item) => item.product_id).filter(Boolean))];
+  const [variantResult, productVariantResult] = await Promise.all([
+    variantIds.length ? supabase.from("product_variants").select("id, product_id, attributes").in("id", variantIds).eq("org_id", orgId) : Promise.resolve({ data: [], error: null }),
+    productIds.length ? supabase.from("product_variants").select("id, product_id, attributes").in("product_id", productIds).eq("org_id", orgId) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (variantResult.error) throw variantResult.error;
+  if (productVariantResult.error) throw productVariantResult.error;
+  const variantsById = new Map((variantResult.data || []).map((variant) => [variant.id, variant]));
+  const variantsByProduct = new Map();
+  for (const variant of productVariantResult.data || []) {
+    const list = variantsByProduct.get(variant.product_id) || [];
+    list.push(variant);
+    variantsByProduct.set(variant.product_id, list);
+  }
+  return items.map((item) => {
+    const productVariants = variantsByProduct.get(item.product_id) || [];
+    const variant = variantsById.get(item.variant_id) || (productVariants.length === 1 ? productVariants[0] : null);
+    return { ...item, variant_name: variantDisplay(variant?.attributes) || item.variant_name || null };
+  });
+}
+
+const ORDER_ITEM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+app.get("/api/orders/:id", async (req, res) => {
+  try {
+    const { user } = await getUser(getToken(req));
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+    const supabase = getServiceSupabase();
+    const { orgId } = await getUserOrg(supabase, user.id);
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", req.params.id)
+      .eq("org_id", orgId)
+      .maybeSingle();
+    if (orderError) throw orderError;
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    const { data: items, error: itemsError } = await supabase
+      .from("order_items")
+      .select("*")
+      .eq("order_id", req.params.id)
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: true });
+    if (itemsError) throw itemsError;
+
+    const enrichedItems = await enrichOrderItems(supabase, orgId, items || []);
+    return res.json({ order, items: enrichedItems, canEditItems: !isOrderDispatched(order) });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch("/api/orders/:id/items", async (req, res) => {
+  try {
+    const { user } = await getUser(getToken(req));
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+    const requestedItems = req.body?.items;
+    if (!Array.isArray(requestedItems)) {
+      return res.status(400).json({ error: "items array required" });
+    }
+
+    const normalizedItems = [];
+    const itemKeys = new Set();
+    for (const item of requestedItems) {
+      if (!item || typeof item !== "object") {
+        return res.status(400).json({ error: "Each item must be an object" });
+      }
+      const productId = item.productId || null;
+      const variantId = item.variantId || null;
+      const quantity = item.quantity;
+      if (!productId && !variantId) {
+        return res.status(400).json({ error: "Each item requires a productId or variantId" });
+      }
+      if (!Number.isInteger(quantity) || quantity < 1) {
+        return res.status(400).json({ error: "Item quantity must be a positive integer" });
+      }
+      if ((productId && (typeof productId !== "string" || !ORDER_ITEM_UUID_RE.test(productId))) ||
+          (variantId && (typeof variantId !== "string" || !ORDER_ITEM_UUID_RE.test(variantId)))) {
+        return res.status(400).json({ error: "Product and variant IDs must be UUIDs" });
+      }
+      const key = `${productId || ""}:${variantId || ""}`;
+      if (itemKeys.has(key)) {
+        return res.status(400).json({ error: "Duplicate order item" });
+      }
+      itemKeys.add(key);
+      normalizedItems.push({ productId, variantId, quantity });
+    }
+
+    const supabase = getServiceSupabase();
+    const { orgId } = await getUserOrg(supabase, user.id);
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", req.params.id)
+      .eq("org_id", orgId)
+      .maybeSingle();
+    if (orderError) throw orderError;
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    if (isOrderDispatched(order)) {
+      return res.status(409).json({ error: "Order items cannot be edited after courier dispatch" });
+    }
+
+    const { data: existingItems, error: existingItemsError } = await supabase
+      .from("order_items")
+      .select("product_id")
+      .eq("order_id", req.params.id)
+      .eq("org_id", orgId);
+    if (existingItemsError) throw existingItemsError;
+    const existingProductIds = (existingItems || []).map((item) => item.product_id).filter(Boolean);
+
+    const productIds = [...new Set(normalizedItems.map((item) => item.productId).filter(Boolean))];
+    const variantIds = [...new Set(normalizedItems.map((item) => item.variantId).filter(Boolean))];
+    const affectedProducts = new Map();
+    if (productIds.length) {
+      const { data: products, error } = await supabase
+        .from("products")
+        .select("id, slug")
+        .in("id", productIds)
+        .eq("org_id", orgId);
+      if (error) throw error;
+      if ((products || []).length !== productIds.length) {
+        return res.status(400).json({ error: "One or more products are not available" });
+      }
+      for (const product of products || []) affectedProducts.set(product.id, product);
+    }
+    if (variantIds.length) {
+      const { data: variants, error } = await supabase
+        .from("product_variants")
+        .select("id, product_id")
+        .in("id", variantIds)
+        .eq("org_id", orgId);
+      if (error) throw error;
+      if ((variants || []).length !== variantIds.length) {
+        return res.status(400).json({ error: "One or more variants are not available" });
+      }
+      const variantProducts = new Map((variants || []).map((variant) => [variant.id, variant.product_id]));
+      if (normalizedItems.some((item) => item.variantId && item.productId && variantProducts.get(item.variantId) !== item.productId)) {
+        return res.status(400).json({ error: "Variant does not belong to supplied product" });
+      }
+      const variantProductIds = [...new Set((variants || []).map((variant) => variant.product_id).filter(Boolean))];
+      const missingProductIds = variantProductIds.filter((id) => !affectedProducts.has(id));
+      if (missingProductIds.length) {
+        const { data: products, error: productsError } = await supabase
+          .from("products")
+          .select("id, slug")
+          .in("id", missingProductIds)
+          .eq("org_id", orgId);
+        if (productsError) throw productsError;
+        for (const product of products || []) affectedProducts.set(product.id, product);
+      }
+    }
+
+    const missingCacheProductIds = [...new Set(existingProductIds)].filter((id) => !affectedProducts.has(id));
+    if (missingCacheProductIds.length) {
+      const { data: products, error } = await supabase
+        .from("products")
+        .select("id, slug")
+        .in("id", missingCacheProductIds)
+        .eq("org_id", orgId);
+      if (error) throw error;
+      for (const product of products || []) affectedProducts.set(product.id, product);
+    }
+
+    const cacheInventoryIds = [...new Set([
+      ...existingProductIds,
+      ...productIds,
+      ...[...affectedProducts.keys()],
+    ])];
+
+    // The RPC locks the order and inventory rows, applies stock deltas, replaces
+    // items, and updates denormalized order totals in one database transaction.
+    const { error: mutationError } = await supabase.rpc("replace_order_items", {
+      p_org_id: orgId,
+      p_order_id: req.params.id,
+      p_items: normalizedItems,
+    });
+    if (mutationError) {
+      const message = mutationError.message || "Unable to update order items";
+      if (/dispatch|courier|insufficient|stock/i.test(message)) {
+        return res.status(409).json({ error: message });
+      }
+      throw mutationError;
+    }
+
+    await Promise.all(
+      [
+        ...[...affectedProducts.values()].map((product) =>
+        purgeProductCache(orgId, product, { listChanged: false, warm: false }).catch((error) => {
+          console.warn("[Orders] Product cache purge failed after item edit:", error.message);
+        }),
+        ),
+        purgeProductCache(orgId, null, {
+          listChanged: false,
+          warm: false,
+          inventoryIds: cacheInventoryIds,
+        }),
+      ],
+    );
+
+    const [{ data: updatedOrder, error: updatedOrderError }, { data: items, error: updatedItemsError }] = await Promise.all([
+      supabase.from("orders").select("*").eq("id", req.params.id).eq("org_id", orgId).single(),
+      supabase.from("order_items").select("*").eq("order_id", req.params.id).eq("org_id", orgId).order("created_at", { ascending: true }),
+    ]);
+    if (updatedOrderError) throw updatedOrderError;
+    if (updatedItemsError) throw updatedItemsError;
+    return res.json({ order: updatedOrder, items: items || [], canEditItems: true });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
@@ -5732,9 +5969,18 @@ app.patch("/api/orders/:id", async (req, res) => {
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     const supabase = getServiceSupabase();
     const { orgId } = await getUserOrg(supabase, user.id);
-    const allowed = ["status", "notes", "courier_status", "consignment_id", "tracking_code", "courier_message", "sent_to_courier", "fraud_checked", "fraud_data", "price", "delivery_rate"];
+    const allowed = ["status", "notes", "courier_status", "consignment_id", "tracking_code", "courier_message", "sent_to_courier", "fraud_checked", "fraud_data", "price", "delivery_rate", "customer_name", "phone", "address"];
     const update = {};
     for (const k of allowed) { if (req.body[k] !== undefined) update[k] = req.body[k]; }
+    if (update.customer_name !== undefined && (typeof update.customer_name !== "string" || !update.customer_name.trim())) {
+      return res.status(400).json({ error: "Customer name is required" });
+    }
+    if (update.phone !== undefined && typeof update.phone !== "string") {
+      return res.status(400).json({ error: "Phone must be text" });
+    }
+    if (update.address !== undefined && typeof update.address !== "string") {
+      return res.status(400).json({ error: "Address must be text" });
+    }
     // Verify org ownership — tenant can only update their own orders.
     const { data: orderCheck } = await supabase.from("orders").select("*").eq("id", req.params.id).eq("org_id", orgId).single();
     if (!orderCheck) return res.status(404).json({ error: "Order not found" });
@@ -8978,12 +9224,24 @@ function computeEtag(fingerprint) {
   return "W/\"" + crypto.createHash("sha1").update(fingerprint).digest("base64url").slice(0, 16) + "\"";
 }
 
-// Weak ETag keyed on only render-affecting fields. Includes updated_at
-// so a save that touches no price/slug field still invalidates.
+// Weak ETag keyed on every public field whose image or catalog updates must
+// invalidate a browser's conditional request.
 function catalogEtag(products) {
-  const fp = products
-    .map((p) => `${p.id}:${p.updated_at ?? ""}:${p.slug}:${p.price ?? ""}`)
-    .join("|");
+  const fp = JSON.stringify(
+    products.map((product) => ({
+      id: product.id,
+      slug: product.slug,
+      price: product.price,
+      compare_at_price: product.compare_at_price,
+      image_url: product.image_url,
+      image_urls: product.image_urls,
+      images: product.images,
+      variants: product.variants?.map((variant) => ({
+        id: variant.id,
+        price: variant.price,
+      })),
+    })),
+  );
   return computeEtag(fp);
 }
 
@@ -9350,6 +9608,23 @@ async function handlePublicHandleOrderSubmit(req, res) {
       .single();
     if (orderErr) throw orderErr;
 
+    const { error: orderItemsError } = await supabase.from("order_items").insert(
+      orderItems.map((item) => ({
+        org_id: orgId,
+        order_id: order.id,
+        product_id: item.productId,
+        variant_id: item.variantId,
+        product_name: item.productName,
+        variant_name: JSON.stringify(item.attributes || {}),
+        unit_price: item.unitPrice,
+        quantity: item.quantity,
+      })),
+    );
+    if (orderItemsError) {
+      await supabase.from("orders").delete().eq("id", order.id).eq("org_id", orgId);
+      throw orderItemsError;
+    }
+
     // ── Decrement variant stock ──────────────────────────────────────────
     for (const item of orderItems) {
       await supabase
@@ -9554,10 +9829,36 @@ app.post("/api/products/save", async (req, res) => {
       const savedProduct = data[i];
       const sourceProduct = sourceProducts[i];
       if (!Array.isArray(sourceProduct.variants) || sourceProduct.variants.length === 0) continue;
+
+      // Derive a base selling price so per-variant pricing works even when the
+      // product-level selling_price is empty. Prefer an explicit product price;
+      // otherwise use the lowest variant price as the base. This prevents
+      // products from saving with a null base (which resolved every variant
+      // price to null/৳0 on the storefront).
+      const variantPrices = sourceProduct.variants
+        .map((v) => (v.selling_price != null ? parseFloat(v.selling_price) : null))
+        .filter((n) => n != null && !Number.isNaN(n));
+      const derivedBase =
+        savedProduct.selling_price != null
+          ? parseFloat(savedProduct.selling_price)
+          : variantPrices.length > 0
+            ? Math.min(...variantPrices)
+            : null;
+
+      if (derivedBase != null && savedProduct.selling_price == null) {
+        const { error: baseErr } = await supabase
+          .from("products")
+          .update({ selling_price: derivedBase })
+          .eq("id", savedProduct.id)
+          .eq("org_id", orgId);
+        if (baseErr) console.error("[products/save] base price update error:", baseErr.message);
+        savedProduct.selling_price = derivedBase;
+      }
+
       for (const v of sourceProduct.variants) {
         if (!v.attributes || typeof v.attributes !== "object" || Object.keys(v.attributes).length === 0) continue;
-        // Compute price_adjustment relative to base selling_price
-        const basePx = savedProduct.selling_price;
+        // Compute price_adjustment relative to the effective base selling price
+        const basePx = derivedBase;
         const varPx = v.selling_price != null ? parseFloat(v.selling_price) : null;
         const priceAdj = basePx != null && varPx != null ? varPx - basePx : 0;
         variantRows.push({
@@ -9998,7 +10299,7 @@ app.patch("/api/products/:id", async (req, res) => {
     if (!onlyStockChanged && (data.published || isUnpublishing)) {
       const isPublishing = update.published === true;
       const listChanged = isPublishing || isUnpublishing;
-      purgeProductCache(orgId, req.params.id, {
+      purgeProductCache(orgId, { id: data.id, slug: data.slug }, {
         listChanged,
         warm: !isUnpublishing,
       }).catch(() => {});
@@ -10027,17 +10328,26 @@ app.delete("/api/products/:id", async (req, res) => {
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     const supabase = getServiceSupabase();
     const { orgId } = await getUserOrg(supabase, user.id);
-    const { data: images } = await supabase
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id, slug")
+      .eq("id", req.params.id)
+      .eq("org_id", orgId)
+      .maybeSingle();
+    if (productError) throw productError;
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    const { data: images, error: imagesError } = await supabase
       .from("product_images")
       .select("storage_path")
       .eq("product_id", req.params.id)
       .eq("org_id", orgId);
-    const { error } = await supabase.from("products").delete().eq("id", req.params.id).eq("org_id", orgId);
+    if (imagesError) throw imagesError;
+    const { error } = await supabase.from("products").delete().eq("id", product.id).eq("org_id", orgId);
     if (error) throw error;
     // List changed + detail stale: purge with warm:false (warming an
     // unpublished 404 would pollute the edge with a negative entry).
-    purgeProductCache(orgId, req.params.id, { listChanged: true, warm: false }).catch(() => {});
-    const paths = (images || []).map((image) => image.storage_path).filter(Boolean);
+    purgeProductCache(orgId, product, { listChanged: true, warm: false }).catch(() => {});
+    const paths = (images || []).flatMap((image) => getProductImagePathsForCleanup(image.storage_path));
     if (paths.length) {
       await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove(paths);
     }
@@ -10085,7 +10395,7 @@ app.post("/api/products/:id/images", async (req, res) => {
 
     const { data: product, error: productError } = await supabase
       .from("products")
-      .select("id, name")
+      .select("id, name, slug")
       .eq("id", productId)
       .eq("org_id", orgId)
       .maybeSingle();
@@ -10107,33 +10417,75 @@ app.post("/api/products/:id/images", async (req, res) => {
     const inserted = [];
     for (let i = 0; i < files.length; i++) {
       const { buffer, mimeType } = parseProductImagePayload(files[i]);
-      const ext = productImageExtension(mimeType);
-      const storagePath = `${orgId}/${productId}/${crypto.randomUUID()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from(PRODUCT_IMAGES_BUCKET)
-        .upload(storagePath, buffer, { contentType: mimeType, upsert: false });
-      if (uploadError) throw uploadError;
-      const { data: publicData } = supabase.storage.from(PRODUCT_IMAGES_BUCKET).getPublicUrl(storagePath);
-      const imageUrl = publicData.publicUrl;
-      const isPrimary = currentCount === 0 && i === 0;
-      const { data: image, error: insertError } = await supabase
-        .from("product_images")
-        .insert({
-          org_id: orgId,
-          product_id: productId,
-          image_url: imageUrl,
-          storage_path: storagePath,
-          alt_text: files[i]?.alt_text || product.name,
-          sort_order: currentCount + i,
-          is_primary: isPrimary,
-        })
-        .select("id, product_id, image_url, alt_text, sort_order, is_primary, created_at")
-        .single();
-      if (insertError) {
-        await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove([storagePath]);
-        throw insertError;
+      let imageBuffers;
+      try {
+        imageBuffers = await buildProductImageBuffers(buffer, { mimeType });
+      } catch (error) {
+        console.warn("[products/images] image processing failed:", error.message);
+        const processingError = new Error("Product image could not be processed");
+        processingError.status = 400;
+        throw processingError;
       }
-      inserted.push({ ...image, url: image.image_url });
+
+      const asset = createProductImageAssetPaths({
+        orgId,
+        productId,
+        assetId: crypto.randomUUID(),
+      });
+      const uploadedPaths = [];
+      try {
+        const uploads = [
+          { path: asset.sourcePath, buffer: imageBuffers.source.buffer, contentType: imageBuffers.source.mimeType },
+          ...Object.entries(asset.variantPaths).map(([width, path]) => ({
+            path,
+            buffer: imageBuffers.variants[width].buffer,
+            contentType: "image/webp",
+          })),
+        ];
+
+        for (const upload of uploads) {
+          const { error: uploadError } = await supabase.storage
+            .from(PRODUCT_IMAGES_BUCKET)
+            .upload(upload.path, upload.buffer, {
+              contentType: upload.contentType,
+              cacheControl: String(PRODUCT_IMAGE_CACHE_SECONDS),
+              upsert: false,
+            });
+          if (uploadError) throw uploadError;
+          uploadedPaths.push(upload.path);
+        }
+
+        const { data: publicData } = supabase.storage
+          .from(PRODUCT_IMAGES_BUCKET)
+          .getPublicUrl(asset.variantPaths["960"]);
+        const imageUrl = publicData.publicUrl;
+        const isPrimary = currentCount === 0 && i === 0;
+        const { data: image, error: insertError } = await supabase
+          .from("product_images")
+          .insert({
+            org_id: orgId,
+            product_id: productId,
+            image_url: imageUrl,
+            storage_path: asset.sourcePath,
+            alt_text: files[i]?.alt_text || product.name,
+            sort_order: currentCount + i,
+            is_primary: isPrimary,
+          })
+          .select("id, product_id, image_url, alt_text, sort_order, is_primary, created_at")
+          .single();
+        if (insertError) throw insertError;
+        inserted.push({ ...image, url: image.image_url });
+      } catch (error) {
+        if (uploadedPaths.length) {
+          const { error: cleanupError } = await supabase.storage
+            .from(PRODUCT_IMAGES_BUCKET)
+            .remove(uploadedPaths);
+          if (cleanupError) {
+            console.warn("[products/images] asset cleanup failed:", cleanupError.message);
+          }
+        }
+        throw error;
+      }
     }
 
     if (inserted[0] && inserted[0].is_primary) {
@@ -10149,6 +10501,8 @@ app.post("/api/products/:id/images", async (req, res) => {
           .eq("id", productId).eq("org_id", orgId).then(() => {});
       }).catch(() => {});
     }
+
+    purgeProductCache(orgId, product, { listChanged: true }).catch(() => {});
 
     return res.json({ images: inserted });
   } catch (e) {
@@ -10168,7 +10522,7 @@ app.patch("/api/products/:id/images/reorder", async (req, res) => {
 
     const { data: product, error: productError } = await supabase
       .from("products")
-      .select("id")
+      .select("id, slug")
       .eq("id", productId)
       .eq("org_id", orgId)
       .maybeSingle();
@@ -10201,6 +10555,7 @@ app.patch("/api/products/:id/images/reorder", async (req, res) => {
     if (primary) {
       await supabase.from("products").update({ image_url: primary.image_url }).eq("id", productId).eq("org_id", orgId);
     }
+    purgeProductCache(orgId, product, { listChanged: true }).catch(() => {});
     const imagesMap = await loadProductImagesMap(supabase, orgId, [productId]);
     return res.json({ images: imagesMap[productId] || [] });
   } catch (e) {
@@ -10215,6 +10570,14 @@ app.delete("/api/products/:id/images/:imageId", async (req, res) => {
     const supabase = getServiceSupabase();
     const { orgId } = await getUserOrg(supabase, user.id);
     const productId = req.params.id;
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id, slug")
+      .eq("id", productId)
+      .eq("org_id", orgId)
+      .maybeSingle();
+    if (productError) throw productError;
+    if (!product) return res.status(404).json({ error: "Product not found" });
     const { data: image, error: imageError } = await supabase
       .from("product_images")
       .select("id, storage_path, is_primary")
@@ -10233,7 +10596,7 @@ app.delete("/api/products/:id/images/:imageId", async (req, res) => {
       .eq("org_id", orgId);
     if (deleteError) throw deleteError;
     if (image.storage_path) {
-      await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove([image.storage_path]);
+      await supabase.storage.from(PRODUCT_IMAGES_BUCKET).remove(getProductImagePathsForCleanup(image.storage_path));
     }
 
     if (image.is_primary) {
@@ -10253,6 +10616,8 @@ app.delete("/api/products/:id/images/:imageId", async (req, res) => {
         await supabase.from("products").update({ image_url: null }).eq("id", productId).eq("org_id", orgId);
       }
     }
+
+    purgeProductCache(orgId, product, { listChanged: true }).catch(() => {});
 
     return res.json({ success: true });
   } catch (e) {
