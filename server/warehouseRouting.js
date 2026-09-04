@@ -9,6 +9,19 @@ function lookupProduct(item, productsById, productsByName) {
   return null;
 }
 
+export function parseOptionalWeightKg(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+
+  const weight = Number(value);
+  if (!Number.isFinite(weight) || weight < 0) {
+    const error = new Error("Weight must be a non-negative number");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return Math.round(weight * 1000) / 1000;
+}
+
 // Returns the warehouse for an order: the first resolvable product's warehouse,
 // otherwise the org's default warehouse, otherwise null.
 export function resolveWarehouseId({ items, productsById, productsByName, defaultWarehouseId }) {

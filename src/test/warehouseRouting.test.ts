@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { computeOrderWeightKg, resolveWarehouseId } from "../../server/warehouseRouting.js";
+import {
+  computeOrderWeightKg,
+  parseOptionalWeightKg,
+  resolveWarehouseId,
+} from "../../server/warehouseRouting.js";
 
 const MANGO_WH = "11111111-1111-1111-1111-111111111111";
 const MAIN_WH = "22222222-2222-2222-2222-222222222222";
@@ -110,5 +114,19 @@ describe("computeOrderWeightKg", () => {
   it("rounds to three decimals", () => {
     const variants = { "v-third": { id: "v-third", product_id: "p-mango", weight_kg: 0.3333 } };
     expect(computeOrderWeightKg({ items: [{ variantId: "v-third", quantity: 3 }], variantsById: variants, productsById: PRODUCTS })).toBe(1);
+  });
+});
+
+describe("parseOptionalWeightKg", () => {
+  it.each([undefined, null, "", "   "])("returns null for blank optional input %#", (value) => {
+    expect(parseOptionalWeightKg(value)).toBeNull();
+  });
+
+  it("rounds valid input to three decimals", () => {
+    expect(parseOptionalWeightKg("1.2346")).toBe(1.235);
+  });
+
+  it.each(["abc", -0.001, Number.POSITIVE_INFINITY])("rejects invalid weight %#", (value) => {
+    expect(() => parseOptionalWeightKg(value)).toThrow("Weight must be a non-negative number");
   });
 });
