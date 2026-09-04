@@ -73,4 +73,22 @@ describe("warehouse migration", () => {
     );
     expect(sql).toMatch(/grant execute on function public\.set_default_warehouse\(uuid, uuid\) to service_role/);
   });
+
+  it("defines service-role-only transactional warehouse mutation functions", async () => {
+    const sql = await readMigration();
+
+    for (const signature of [
+      "create_warehouse(uuid, text, text, text, text, boolean)",
+      "update_warehouse(uuid, uuid, text, text, text, text, boolean)",
+      "delete_warehouse(uuid, uuid)",
+      "bulk_assign_products_to_warehouse(uuid, uuid[], uuid)",
+    ]) {
+      expect(sql).toContain(`revoke all on function public.${signature}`);
+      expect(sql).toContain(`grant execute on function public.${signature} to service_role`);
+    }
+
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(sql).toMatch(/create function public\.delete_warehouse[\s\S]*?update public\.products[\s\S]*?update public\.warehouses/);
+    expect(sql).toMatch(/create function public\.bulk_assign_products_to_warehouse[\s\S]*?cardinality\(p_product_ids\)/);
+  });
 });

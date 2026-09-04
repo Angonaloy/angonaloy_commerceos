@@ -47,13 +47,16 @@ describe("warehouse detail API", () => {
     expect(detailRoute).not.toContain("assigned_explicitly: product.warehouse_id === warehouseId");
   });
 
-  it("keeps the detail product query org-scoped and returns the required summary", () => {
+  it("keeps the detail product query org-scoped and returns a variant-aware stock summary", () => {
     expect(detailRoute).toMatch(
       /\.from\("products"\)[\s\S]*?\.select\("id, name, selling_price, stock_quantity, weight_kg, published, warehouse_id"\)[\s\S]*?\.eq\("org_id", orgId\)/,
     );
     expect(detailRoute).toContain("product_count: products.length");
     expect(detailRoute).toContain("total_stock:");
     expect(detailRoute).toContain("published_count:");
+    expect(detailRoute).toContain('.from("product_variants")');
+    expect(detailRoute).toContain('.select("product_id, stock_quantity")');
+    expect(detailRoute).toContain("resolvedStock");
   });
 
   it("requires UUID product IDs and only accepts a UUID or null warehouse ID", () => {
@@ -71,14 +74,14 @@ describe("warehouse detail API", () => {
     );
   });
 
-  it("validates non-null assignments through the active helper before an org-scoped update", () => {
+  it("validates non-null assignments before an all-or-error transactional update", () => {
     expect(bulkRoute).toMatch(
       /if \(warehouseId !== null\) \{[\s\S]*?await getActiveWarehouse\(supabase, orgId, warehouseId\)[\s\S]*?if \(!warehouse\) return res\.status\(404\)\.json\(\{ error: "Warehouse not found" \}\);/,
     );
     expect(bulkRoute).not.toContain('.from("warehouses")');
-    expect(bulkRoute).toMatch(
-      /\.from\("products"\)[\s\S]*?\.update\(\{ warehouse_id: warehouseId \}\)[\s\S]*?\.eq\("org_id", orgId\)[\s\S]*?\.in\("id", productIds\)/,
-    );
+    expect(bulkRoute).toContain("new Set(body.product_ids)");
+    expect(bulkRoute).toContain('supabase.rpc("bulk_assign_products_to_warehouse"');
+    expect(bulkRoute).toContain("p_org_id: orgId");
   });
 
   it("authenticates both routes, never takes a client org, and returns generic unexpected errors", () => {

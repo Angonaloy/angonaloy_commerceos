@@ -73,51 +73,13 @@ describe("warehouse API routes", () => {
     expect(listRoute).toContain("warehouse.is_default ? unassignedProducts : 0");
   });
 
-  it("uses the atomic default RPC after creating a non-default warehouse", () => {
-    const insertedAsNonDefault = createRoute.indexOf("is_default: false");
-    const setDefaultRpc = createRoute.indexOf('supabase.rpc("set_default_warehouse"');
-
-    expect(warehouseSection).not.toContain("clearOtherDefaultWarehouses");
-    expect(insertedAsNonDefault).toBeGreaterThan(-1);
-    expect(setDefaultRpc).toBeGreaterThan(insertedAsNonDefault);
+  it("uses transactional RPCs for create, update, and delete", () => {
+    expect(createRoute).toContain('supabase.rpc("create_warehouse"');
+    expect(updateRoute).toContain('supabase.rpc("update_warehouse"');
+    expect(deleteRoute).toContain('supabase.rpc("delete_warehouse"');
     expect(createRoute).toContain("p_org_id: orgId");
-    expect(createRoute).toContain("p_warehouse_id: warehouseId");
-  });
-
-  it("does not clear a default on false and only promotes through the atomic RPC", () => {
-    expect(warehouseSection).toContain("const isDefault = body.is_default === true");
-    expect(updateRoute).toMatch(
-      /if \(input\.isDefault\) \{[\s\S]*?supabase\.rpc\("set_default_warehouse", \{[\s\S]*?p_org_id: orgId,[\s\S]*?p_warehouse_id: warehouseId,/,
-    );
-    expect(updateRoute).not.toContain("updates.is_default");
-    expect(updateRoute).not.toMatch(/\.update\(\{\s*is_default\s*:/);
-    expect(updateRoute).not.toMatch(/is_default\s*:\s*false/);
-  });
-
-  it("keeps warehouse and product mutations within the active workspace", () => {
-    expect(updateRoute).toMatch(
-      /\.from\("warehouses"\)[\s\S]*?\.update\(updates\)[\s\S]*?\.eq\("id", warehouseId\)[\s\S]*?\.eq\("org_id", orgId\)[\s\S]*?\.is\("deleted_at", null\)/,
-    );
-    expect(deleteRoute).toMatch(
-      /\.from\("products"\)[\s\S]*?\.update\(\{ warehouse_id: null \}\)[\s\S]*?\.eq\("org_id", orgId\)[\s\S]*?\.eq\("warehouse_id", warehouseId\)/,
-    );
-  });
-
-  it("conditionally soft-deletes non-default warehouses before clearing products", () => {
-    const unassignProducts = deleteRoute.indexOf('.from("products")');
-    const softDelete = deleteRoute.indexOf("deleted_at: new Date().toISOString()");
-    const conditionalDelete = deleteRoute.slice(softDelete, unassignProducts);
-
-    expect(deleteRoute).toContain("Cannot delete the default warehouse");
-    expect(deleteRoute).toContain("warehouse_id: null");
-    expect(unassignProducts).toBeGreaterThan(-1);
-    expect(softDelete).toBeGreaterThan(-1);
-    expect(softDelete).toBeLessThan(unassignProducts);
-    expect(conditionalDelete).toContain('.eq("org_id", orgId)');
-    expect(conditionalDelete).toContain('.eq("is_default", false)');
-    expect(conditionalDelete).toContain('.is("deleted_at", null)');
-    expect(conditionalDelete).toContain('.select("id")');
-    expect(deleteRoute).toContain("if (!deletedWarehouse)");
+    expect(updateRoute).toContain("p_org_id: orgId");
+    expect(deleteRoute).toContain("p_org_id: orgId");
   });
 
   it("uses a safe error response for unexpected warehouse failures", () => {

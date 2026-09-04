@@ -8999,33 +8999,19 @@ app.post("/api/warehouses", async (req, res) => {
     const { orgId } = await getUserOrg(supabase, user.id);
     const { name, address = null, contact_person = null, phone = null } = input.values;
 
-    const { data, error } = await supabase
-      .from("warehouses")
-      .insert({
-        org_id: orgId,
-        name,
-        address,
-        contact_person,
-        phone,
-        is_default: false,
-      })
-      .select()
-      .single();
+    const { data, error } = await supabase.rpc("create_warehouse", {
+      p_org_id: orgId,
+      p_name: name,
+      p_address: address,
+      p_contact_person: contact_person,
+      p_phone: phone,
+      p_is_default: input.isDefault,
+    });
     if (error) {
       if (error.code === "23505" || /duplicate/i.test(error.message || "")) {
         return res.status(409).json({ error: "A warehouse with that name already exists" });
       }
       throw error;
-    }
-
-    const warehouseId = data.id;
-    if (input.isDefault) {
-      const { error: defaultError } = await supabase.rpc("set_default_warehouse", {
-        p_org_id: orgId,
-        p_warehouse_id: warehouseId,
-      });
-      if (defaultError) throw defaultError;
-      data.is_default = true;
     }
 
     return res.json({ warehouse: data });
@@ -9047,33 +9033,22 @@ app.patch("/api/warehouses/:id", async (req, res) => {
     const existing = await getActiveWarehouse(supabase, orgId, warehouseId);
     if (!existing) return res.status(404).json({ error: "Warehouse not found" });
 
-    const updates = input.values;
-    let warehouse = existing;
-    if (Object.keys(updates).length) {
-      const { data, error } = await supabase
-        .from("warehouses")
-        .update(updates)
-        .eq("id", warehouseId)
-        .eq("org_id", orgId)
-        .is("deleted_at", null)
-        .select("id, name, address, contact_person, phone, is_default")
-        .single();
-      if (error) {
-        if (error.code === "23505" || /duplicate/i.test(error.message || "")) {
-          return res.status(409).json({ error: "A warehouse with that name already exists" });
-        }
-        throw error;
+    const values = { ...existing, ...input.values };
+    const { data: warehouse, error } = await supabase.rpc("update_warehouse", {
+      p_org_id: orgId,
+      p_warehouse_id: warehouseId,
+      p_name: values.name,
+      p_address: values.address,
+      p_contact_person: values.contact_person,
+      p_phone: values.phone,
+      p_is_default: input.isDefault,
+    });
+    if (error) {
+      if (error.code === "23505" || /duplicate/i.test(error.message || "")) {
+        return res.status(409).json({ error: "A warehouse with that name already exists" });
       }
-      warehouse = data;
-    }
-
-    if (input.isDefault) {
-      const { error: defaultError } = await supabase.rpc("set_default_warehouse", {
-        p_org_id: orgId,
-        p_warehouse_id: warehouseId,
-      });
-      if (defaultError) throw defaultError;
-      warehouse.is_default = true;
+      if (error.code === "P0002") return res.status(404).json({ error: "Warehouse not found" });
+      throw error;
     }
 
     return res.json({ warehouse });
@@ -9096,27 +9071,15 @@ app.delete("/api/warehouses/:id", async (req, res) => {
       return res.status(400).json({ error: "Cannot delete the default warehouse" });
     }
 
-    // The predicate synchronizes with set_default_warehouse's row locks.
-    const { data: deletedWarehouse, error } = await supabase
-      .from("warehouses")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", warehouseId)
-      .eq("org_id", orgId)
-      .eq("is_default", false)
-      .is("deleted_at", null)
-      .select("id")
-      .maybeSingle();
-    if (error) throw error;
-    if (!deletedWarehouse) {
+    const { error } = await supabase.rpc("delete_warehouse", {
+      p_org_id: orgId,
+      p_warehouse_id: warehouseId,
+    });
+    if (error?.code === "23514") {
       return res.status(400).json({ error: "Cannot delete the default warehouse" });
     }
-
-    const { error: productsError } = await supabase
-      .from("products")
-      .update({ warehouse_id: null })
-      .eq("org_id", orgId)
-      .eq("warehouse_id", warehouseId);
-    if (productsError) throw productsError;
+    if (error?.code === "P0002") return res.status(404).json({ error: "Warehouse not found" });
+    if (error) throw error;
     return res.json({ success: true });
   } catch (err) {
     return sendWarehouseError(res, err);
@@ -9146,15 +9109,34 @@ app.get("/api/warehouses/:id", async (req, res) => {
 
     const { data: rows, error } = await query;
     if (error) throw error;
-    const products = (rows || []).map((product) => ({
-      id: product.id,
-      name: product.name,
-      selling_price: product.selling_price,
-      stock_quantity: product.stock_quantity,
-      weight_kg: product.weight_kg,
-      published: product.published,
-      assigned_explicitly: product.warehouse_id === warehouse.id,
-    }));
+    const productIds = (rows || []).map((product) => product.id);
+    const variantStock = new Map();
+    if (productIds.length > 0) {
+      const { data: variants, error: variantsError } = await supabase
+        .from("product_variants")
+        .select("product_id, stock_quantity")
+        .eq("org_id", orgId)
+        .in("product_id", productIds);
+      if (variantsError) throw variantsError;
+      for (const variant of variants || []) {
+        const current = variantStock.get(variant.product_id) || 0;
+        variantStock.set(variant.product_id, current + (Number(variant.stock_quantity) || 0));
+      }
+    }
+    const products = (rows || []).map((product) => {
+      const resolvedStock = variantStock.has(product.id)
+        ? variantStock.get(product.id)
+        : Number(product.stock_quantity) || 0;
+      return {
+        id: product.id,
+        name: product.name,
+        selling_price: product.selling_price,
+        stock_quantity: resolvedStock,
+        weight_kg: product.weight_kg,
+        published: product.published,
+        assigned_explicitly: product.warehouse_id === warehouse.id,
+      };
+    });
 
     return res.json({
       warehouse,
@@ -9179,7 +9161,7 @@ app.post("/api/products/bulk-assign-warehouse", async (req, res) => {
       return res.status(400).json({ error: "Invalid warehouse assignment input" });
     }
 
-    const productIds = body.product_ids;
+    const productIds = Array.isArray(body.product_ids) ? [...new Set(body.product_ids)] : [];
     if (!Array.isArray(body.product_ids) || productIds.length === 0 || !productIds.every(isValidWarehouseId)) {
       return res.status(400).json({ error: "product_ids must be a non-empty array of UUID strings" });
     }
@@ -9196,14 +9178,16 @@ app.post("/api/products/bulk-assign-warehouse", async (req, res) => {
       if (!warehouse) return res.status(404).json({ error: "Warehouse not found" });
     }
 
-    const { data, error } = await supabase
-      .from("products")
-      .update({ warehouse_id: warehouseId })
-      .eq("org_id", orgId)
-      .in("id", productIds)
-      .select("id");
+    const { data, error } = await supabase.rpc("bulk_assign_products_to_warehouse", {
+      p_org_id: orgId,
+      p_product_ids: productIds,
+      p_warehouse_id: warehouseId,
+    });
+    if (error?.code === "P0002") {
+      return res.status(409).json({ error: "One or more products are no longer available" });
+    }
     if (error) throw error;
-    return res.json({ updated: (data || []).length });
+    return res.json({ updated: data });
   } catch (err) {
     return sendWarehouseError(res, err);
   }

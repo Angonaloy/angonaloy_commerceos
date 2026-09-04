@@ -90,8 +90,8 @@ begin
   select count(*) into runtime_table_count
   from pg_class
   where relnamespace = 'public'::regnamespace and relkind = 'r';
-  if runtime_table_count <> 19 then
-    raise exception 'Expected 19 runtime tables, found %', runtime_table_count;
+  if runtime_table_count <> 20 then
+    raise exception 'Expected 20 runtime tables, found %', runtime_table_count;
   end if;
 
   select count(*) into rls_table_count
@@ -160,6 +160,18 @@ begin
   if not has_function_privilege('service_role', 'public.set_default_warehouse(uuid, uuid)', 'execute') then
     raise exception 'service_role cannot execute set_default_warehouse';
   end if;
+  if not has_function_privilege('service_role', 'public.create_warehouse(uuid, text, text, text, text, boolean)', 'execute') then
+    raise exception 'service_role cannot execute create_warehouse';
+  end if;
+  if not has_function_privilege('service_role', 'public.update_warehouse(uuid, uuid, text, text, text, text, boolean)', 'execute') then
+    raise exception 'service_role cannot execute update_warehouse';
+  end if;
+  if not has_function_privilege('service_role', 'public.delete_warehouse(uuid, uuid)', 'execute') then
+    raise exception 'service_role cannot execute delete_warehouse';
+  end if;
+  if not has_function_privilege('service_role', 'public.bulk_assign_products_to_warehouse(uuid, uuid[], uuid)', 'execute') then
+    raise exception 'service_role cannot execute bulk_assign_products_to_warehouse';
+  end if;
   if not has_table_privilege('service_role', 'public.meta_connections', 'select,insert,update,delete') then
     raise exception 'service_role lacks server-table privileges';
   end if;
@@ -218,6 +230,85 @@ $$;
 rollback;
 `;
 
+const warehouseBehaviorSql = `
+begin;
+do $$
+declare
+  org_a constant uuid := '20000000-0000-0000-0000-000000000001';
+  org_b constant uuid := '20000000-0000-0000-0000-000000000002';
+  product_a constant uuid := '30000000-0000-0000-0000-000000000001';
+  product_b constant uuid := '30000000-0000-0000-0000-000000000002';
+  main_warehouse uuid;
+  seasonal_warehouse uuid;
+  updated_count integer;
+begin
+  select id into main_warehouse
+  from public.create_warehouse(org_a, 'Main', null, null, null, true);
+  select id into seasonal_warehouse
+  from public.create_warehouse(org_a, 'Seasonal', null, null, null, false);
+
+  perform public.update_warehouse(
+    org_a, seasonal_warehouse, 'Seasonal', null, null, null, true
+  );
+  if (select count(*) from public.warehouses where org_id = org_a and is_default and deleted_at is null) <> 1 then
+    raise exception 'Warehouse default mutation did not preserve exactly one default';
+  end if;
+
+  begin
+    perform public.create_warehouse(org_a, 'Main', null, null, null, true);
+    raise exception 'Duplicate warehouse creation unexpectedly succeeded';
+  exception when unique_violation then
+    null;
+  end;
+  if not exists (
+    select 1 from public.warehouses
+    where id = seasonal_warehouse and is_default and deleted_at is null
+  ) then
+    raise exception 'Failed create did not roll back the default change';
+  end if;
+
+  insert into public.products (id, org_id, name) values
+    (product_a, org_a, 'Org A product'),
+    (product_b, org_b, 'Org B product');
+
+  begin
+    perform public.bulk_assign_products_to_warehouse(
+      org_a, array[product_a, product_b], main_warehouse
+    );
+    raise exception 'Cross-workspace bulk assignment unexpectedly succeeded';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+  if (select warehouse_id from public.products where id = product_a) is not null then
+    raise exception 'Failed bulk assignment partially updated a product';
+  end if;
+
+  updated_count := public.bulk_assign_products_to_warehouse(
+    org_a, array[product_a], main_warehouse
+  );
+  if updated_count <> 1 then
+    raise exception 'Expected one assigned product, got %', updated_count;
+  end if;
+
+  perform public.delete_warehouse(org_a, main_warehouse);
+  if (select warehouse_id from public.products where id = product_a) is not null then
+    raise exception 'Warehouse deletion did not clear product assignment';
+  end if;
+  if not exists (select 1 from public.warehouses where id = main_warehouse and deleted_at is not null) then
+    raise exception 'Warehouse deletion did not soft-delete the warehouse';
+  end if;
+
+  begin
+    perform public.delete_warehouse(org_a, seasonal_warehouse);
+    raise exception 'Default warehouse deletion unexpectedly succeeded';
+  exception when check_violation then
+    null;
+  end;
+end
+$$;
+rollback;
+`;
+
 function verifyFreshDatabase(runNumber) {
   const workDirectory = mkdtempSync(join(tmpdir(), "mangoloverbd-baseline-"));
   const dataDirectory = join(workDirectory, "data");
@@ -253,6 +344,7 @@ function verifyFreshDatabase(runNumber) {
     }
     run(psql, [...connection, "-c", assertionSql], { stdio: "pipe" });
     run(psql, [...connection, "-c", rlsBehaviorSql], { stdio: "pipe" });
+    run(psql, [...connection, "-c", warehouseBehaviorSql], { stdio: "pipe" });
     process.stdout.write(`Baseline reset ${runNumber}: passed\n`);
   } finally {
     if (started) {
