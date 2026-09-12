@@ -85,6 +85,7 @@ export function OrderProtectionReviewQueue() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [contactStatus, setContactStatus] = useState<Record<string, ContactStatus>>({});
+  const [openStatusMenuId, setOpenStatusMenuId] = useState<string | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -322,7 +323,15 @@ export function OrderProtectionReviewQueue() {
                 </div>
                 <div className="mt-3 space-y-1 text-xs leading-5 text-black/70">
                   {review.items.length > 0 ? review.items.map((item, index) => (
-                    <p key={`${review.id}-item-${index}`}>{formatProtectionItem(item)}</p>
+                    <Chip
+                      key={`${review.id}-item-${index}`}
+                      data-testid={`protection-product-${review.id}-${index}`}
+                      variant="subtle"
+                      color="gray"
+                      className="max-w-full overflow-hidden text-ellipsis"
+                    >
+                      {formatProtectionItem(item)}
+                    </Chip>
                   )) : <p>No cart details</p>}
                 </div>
                 {review.phone && (
@@ -387,7 +396,10 @@ export function OrderProtectionReviewQueue() {
                   <CopyGlyph copied={copiedKey === `${review.id}:summary`} />
                   {copiedKey === `${review.id}:summary` ? "Copied" : "Copy"}
                 </button>
-                <DropdownMenu>
+                <DropdownMenu
+                  open={openStatusMenuId === review.id}
+                  onOpenChange={(open) => setOpenStatusMenuId(open ? review.id : null)}
+                >
                   <DropdownMenuTrigger
                     aria-label={`Contact status: ${status === "open" ? "Awaiting contact" : "Contacted"}`}
                     disabled={isUpdating}
@@ -404,6 +416,7 @@ export function OrderProtectionReviewQueue() {
                       onValueChange={(value) => {
                         if (value === "open" || value === "contacted") {
                           setContactStatus((current) => ({ ...current, [review.id]: value }));
+                          setOpenStatusMenuId(null);
                         }
                       }}
                     >

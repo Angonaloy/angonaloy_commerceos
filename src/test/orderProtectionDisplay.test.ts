@@ -19,13 +19,13 @@ describe("order protection display helpers", () => {
     })).toEqual({ productName: "Katimon Mango", variantName: "6KG", quantity: 2, unitPrice: 1180 });
   });
 
-  it("formats one product line with the quantity first", () => {
+  it("formats one product line with the quantity after the product", () => {
     expect(formatProtectionItem({
       product_name: "Honey",
       variant_name: "1 kg",
       quantity: 3,
       unit_price: 800,
-    })).toBe("3 × Honey — 1 kg · ৳800");
+    })).toBe("Honey — 1 kg × 3 · ৳800");
   });
 
   it("computes a total only from valid priced lines", () => {

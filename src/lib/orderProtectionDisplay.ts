@@ -39,7 +39,7 @@ export function normalizeProtectionItem(item: ProtectionItemLike): ProtectionLin
 
 export function formatProtectionItem(item: ProtectionItemLike) {
   const normalized = normalizeProtectionItem(item);
-  const label = `${normalized.quantity} × ${normalized.productName}${normalized.variantName ? ` — ${normalized.variantName}` : ""}`;
+  const label = `${normalized.productName}${normalized.variantName ? ` — ${normalized.variantName}` : ""} × ${normalized.quantity}`;
   return normalized.unitPrice === null ? label : `${label} · ${formatTaka(normalized.unitPrice)}`;
 }
 

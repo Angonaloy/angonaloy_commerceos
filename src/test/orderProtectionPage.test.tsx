@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const { fetchProtectionReviews, updateProtectionReview } = vi.hoisted(() => ({
@@ -40,8 +41,9 @@ describe("order protection dashboard", () => {
     expect(screen.getByText("On hold")).toBeInTheDocument();
     expect(screen.getByText("Storefront checkout")).toBeInTheDocument();
     expect(screen.getByText("65")).toBeInTheDocument();
-    expect(screen.getByText("2 × Katimon Mango — 6KG · ৳1,180")).toBeInTheDocument();
-    expect(screen.getByText("1 × Honey · ৳800")).toBeInTheDocument();
+    expect(screen.getByText("Katimon Mango — 6KG × 2 · ৳1,180")).toBeInTheDocument();
+    expect(screen.getByText("Honey × 1 · ৳800")).toBeInTheDocument();
+    expect(screen.getByTestId("protection-product-review-1-0")).toHaveClass("bg-background-secondary-default", "max-w-full");
     expect(screen.getByText("phone_velocity_15m")).toBeInTheDocument();
     expect(screen.getByText("phone_network_change")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select all reviews" })).toBeInTheDocument();
@@ -55,5 +57,16 @@ describe("order protection dashboard", () => {
     expect(screen.queryByRole("button", { name: /dismiss review/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+  });
+
+  test("updates the contact status dropdown", async () => {
+    const user = userEvent.setup();
+    render(<OrderProtection />);
+
+    await user.click(await screen.findByRole("button", { name: "Contact status: Awaiting contact" }));
+    await user.click(await screen.findByRole("menuitemradio", { name: "Contacted" }));
+
+    expect(screen.getByRole("button", { name: "Contact status: Contacted" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Contact status: Awaiting contact" })).not.toBeInTheDocument();
   });
 });
