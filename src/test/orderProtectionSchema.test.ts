@@ -14,4 +14,13 @@ describe("order protection migration", () => {
     expect(migration).toContain("reason_codes");
     expect(migration).not.toMatch(/grant\s+.*\s+to\s+(anon|authenticated)/iu);
   });
+
+  test("stores contact status for persistent review workflow state", () => {
+    const migration = readFileSync(resolve(process.cwd(), "supabase/migrations/20260913000000_order_protection_contact_status.sql"), "utf8");
+
+    expect(migration).toContain("add column if not exists contact_status");
+    expect(migration).toContain("default 'open'");
+    expect(migration).toContain("contacted");
+    expect(migration).toContain("where contact_status is null");
+  });
 });

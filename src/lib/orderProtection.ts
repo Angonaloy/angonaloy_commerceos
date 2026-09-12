@@ -3,6 +3,7 @@ import { apiFetch } from "@/lib/api";
 export type ProtectionReview = {
   id: string;
   status: "on_hold" | "approved" | "rejected" | "expired";
+  contact_status?: "open" | "contacted";
   source_route: string;
   customer_name: string | null;
   phone: string | null;
@@ -44,7 +45,7 @@ export async function fetchProtectionEvents() {
   return readApiResponse<{ events: ProtectionEvent[] }>(response);
 }
 
-export async function updateProtectionReview(reviewId: string, action: "approve" | "reject") {
+export async function updateProtectionReview(reviewId: string, action: "approve" | "reject" | "open" | "contacted") {
   const response = await apiFetch(`/api/order-protection/reviews/${encodeURIComponent(reviewId)}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

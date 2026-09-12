@@ -96,6 +96,10 @@ export function OrderProtectionReviewQueue() {
     try {
       const response = await fetchProtectionReviews();
       setReviews(response.reviews);
+      setContactStatus(response.reviews.reduce<Record<string, ContactStatus>>((current, review) => ({
+        ...current,
+        [review.id]: review.contact_status === "contacted" ? "contacted" : "open",
+      }), {}));
     } catch {
       setError("Could not load held orders. Please try again.");
     } finally {
@@ -142,6 +146,22 @@ export function OrderProtectionReviewQueue() {
       setError(action === "approve"
         ? "This order could not be approved. Stock or catalog details may have changed."
         : "This order could not be rejected. Please try again.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleContactStatus = async (reviewId: string, nextStatus: ContactStatus) => {
+    const previousStatus = contactStatus[reviewId] || "open";
+    setContactStatus((current) => ({ ...current, [reviewId]: nextStatus }));
+    setOpenStatusMenuId(null);
+    setBusyId(reviewId);
+    setError("");
+    try {
+      await updateProtectionReview(reviewId, nextStatus);
+    } catch {
+      setContactStatus((current) => ({ ...current, [reviewId]: previousStatus }));
+      setError("This contact status could not be saved. Please try again.");
     } finally {
       setBusyId(null);
     }
@@ -415,8 +435,7 @@ export function OrderProtectionReviewQueue() {
                       value={status}
                       onValueChange={(value) => {
                         if (value === "open" || value === "contacted") {
-                          setContactStatus((current) => ({ ...current, [review.id]: value }));
-                          setOpenStatusMenuId(null);
+                          void handleContactStatus(review.id, value);
                         }
                       }}
                     >

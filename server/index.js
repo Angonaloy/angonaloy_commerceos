@@ -11242,12 +11242,25 @@ app.patch("/api/order-protection/reviews/:id", async (req, res) => {
     const { user, supabase, orgId } = await requireOrderProtectionStaff(req);
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     const action = req.body?.action;
-    if (action !== "approve" && action !== "reject") {
-      return res.status(400).json({ error: "action must be approve or reject" });
+    if (action !== "approve" && action !== "reject" && action !== "open" && action !== "contacted") {
+      return res.status(400).json({ error: "action must be approve, reject, open, or contacted" });
     }
     if (action === "approve") {
       const result = await approveHeldProtectionReview(supabase, orgId, req.params.id);
       return res.json({ success: true, decision: "approved", ...result });
+    }
+    if (action === "open" || action === "contacted") {
+      const { data, error } = await supabase
+        .from("order_protection_reviews")
+        .update({ contact_status: action, updated_at: new Date().toISOString() })
+        .eq("id", req.params.id)
+        .eq("org_id", orgId)
+        .eq("status", "on_hold")
+        .select("id, status, contact_status")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(409).json({ error: "Review is no longer awaiting action" });
+      return res.json({ success: true, decision: "contact_status_updated", review: data });
     }
     const { data, error } = await supabase
       .from("order_protection_reviews")

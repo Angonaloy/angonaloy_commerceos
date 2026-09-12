@@ -68,5 +68,26 @@ describe("order protection dashboard", () => {
 
     expect(screen.getByRole("button", { name: "Contact status: Contacted" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Contact status: Awaiting contact" })).not.toBeInTheDocument();
+    expect(updateProtectionReview).toHaveBeenCalledWith("review-1", "contacted");
+  });
+
+  test("restores the saved contact status after loading reviews", async () => {
+    fetchProtectionReviews.mockResolvedValueOnce({ reviews: [{
+      id: "review-1",
+      status: "on_hold",
+      contact_status: "contacted",
+      score: 65,
+      reason_codes: [],
+      customer_name: "Rahim Uddin",
+      phone: null,
+      address: "House 1, Dhanmondi, Dhaka",
+      items: [],
+      source_route: "public_v1",
+      created_at: "2026-09-12T08:00:00.000Z",
+    }] });
+
+    render(<OrderProtection />);
+
+    expect(await screen.findByRole("button", { name: "Contact status: Contacted" })).toBeInTheDocument();
   });
 });
