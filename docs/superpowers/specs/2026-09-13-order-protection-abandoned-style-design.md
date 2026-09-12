@@ -10,7 +10,7 @@ Make the Order Protection review queue use the same row layout and interaction l
 
 - Restyle `OrderProtectionReviewQueue` to match the abandoned queue's row structure, spacing, typography, chips, and responsive behavior.
 - Keep the queue header and loading, error, and empty states in the existing Order Protection page.
-- Add the abandoned-row actions: Call, WhatsApp, Copy, contact-status dropdown, and Dismiss.
+- Add the abandoned-row actions: Call, WhatsApp, Copy, and contact-status dropdown.
 - Keep Accept and Reject as protection-specific per-row actions.
 - Show risk score and risk reasons in the row.
 - Render each cart item on its own line with quantity, product name, optional variant, and optional price.
@@ -20,6 +20,7 @@ Make the Order Protection review queue use the same row layout and interaction l
 
 - No changes to the order-protection database schema or server routes.
 - No bulk Accept or Reject actions.
+- No Dismiss action; Reject is the explicit negative decision.
 - No changes to the abandoned checkout queue.
 - No changes to how risk scores or reason codes are calculated.
 
@@ -37,11 +38,10 @@ The action area contains, when the data is available:
 - WhatsApp
 - Copy
 - Contact status (`Awaiting contact` / `Contacted`)
-- Dismiss
 - Accept
 - Reject
 
-Accept and Reject remain visually distinct from contact actions. Accept uses the existing success chip treatment; Reject uses the neutral treatment. Dismiss uses the existing destructive confirmation dialog pattern.
+Accept and Reject remain visually distinct from contact actions. Accept uses the existing success chip treatment; Reject uses the neutral treatment.
 
 Risk information is displayed without changing the abandoned row's hierarchy:
 
@@ -64,10 +64,9 @@ Keep `AbandonedCheckoutQueue` as the source of the visual recipe but do not chan
 - selected review IDs
 - copied field/summary state
 - contact-status state used by the existing review row UI
-- dismiss target
 - the existing loading/error/busy state
 
-The current protection API has no contact-status or dismiss action. The contact-status dropdown is therefore local presentation state for the current page session and never writes to the abandoned-checkout API. Dismiss opens a confirmation dialog and uses the existing protection `reject` mutation, then removes the review from the queue after success. The UI labels this outcome as a dismissal while the persisted protection decision remains `rejected`.
+The current protection API has no contact-status action. The contact-status dropdown is therefore local presentation state for the current page session and never writes to the abandoned-checkout API.
 
 Accept and Reject continue using `updateProtectionReview(reviewId, action)`. Resolved reviews are removed from the local queue after a successful response.
 
@@ -88,6 +87,6 @@ Update the Order Protection page tests to verify:
 - risk score and all risk reasons render;
 - Accept and Reject still call the existing protection mutation and remove the row;
 - missing phone or item price safely omits the corresponding optional UI;
-- dismiss confirmation does not dismiss accidentally and maps to the existing reject mutation.
+- Reject still uses the existing protection mutation and removes the review after success.
 
 Run the full Vitest suite, lint, build, and `git diff --check` before shipping.

@@ -1,6 +1,5 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import userEvent from "@testing-library/user-event";
 
 const { fetchProtectionReviews, updateProtectionReview } = vi.hoisted(() => ({
   fetchProtectionReviews: vi.fn(),
@@ -46,26 +45,15 @@ describe("order protection dashboard", () => {
     expect(screen.getByText("phone_velocity_15m")).toBeInTheDocument();
     expect(screen.getByText("phone_network_change")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select all reviews" })).toBeInTheDocument();
+    expect(screen.getByTestId("checkbox-protection-all").parentElement).toHaveClass("px-2", "sm:px-3");
+    expect(screen.getByTestId("checkbox-protection-review-1").closest("article")).toHaveClass("gap-2", "px-2", "sm:px-3");
+    expect(screen.getByTestId("risk-reasons-review-1")).toHaveClass("flex-nowrap", "overflow-x-auto");
     expect(screen.getByRole("link", { name: /call 01712345678/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /open whatsapp for 01712345678/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy review summary/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /contact status: awaiting contact/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dismiss review/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /dismiss review/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /approve/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
-  });
-
-  test("maps Dismiss to the existing protection reject mutation after confirmation", async () => {
-    const user = userEvent.setup();
-    render(<OrderProtection />);
-
-    await user.click(await screen.findByRole("button", { name: /dismiss review/i }));
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    expect(screen.getByText("Dismiss held review?")).toBeInTheDocument();
-    expect(updateProtectionReview).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole("button", { name: /confirm dismiss/i }));
-    await waitFor(() => expect(updateProtectionReview).toHaveBeenCalledWith("review-1", "reject"));
-    expect(screen.queryByText("Rahim Uddin")).not.toBeInTheDocument();
   });
 });

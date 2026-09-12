@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Update the Order Protection review queue to use the Dashboard Abandoned queue's row UI, with contact actions, Dismiss-to-reject, protection details, and line-by-line product quantities.
+**Goal:** Update the Order Protection review queue to use the Dashboard Abandoned queue's row UI, with contact actions, protection details, and line-by-line product quantities.
 
 **Architecture:** Keep the existing `OrderProtectionReviewQueue` as the owner of protection fetching and mutations. Add a small pure display-helper module for safely normalizing stored protection item payloads, computing totals, formatting source labels, and creating contact links. Reuse the abandoned queue's established classes and interaction patterns without changing the abandoned queue's public API.
 
@@ -12,7 +12,7 @@
 
 - All authenticated frontend API calls use `apiFetch()` from `src/lib/api.ts`.
 - Accept and Reject continue using `updateProtectionReview(reviewId, action)`.
-- Dismiss uses the existing protection Reject mutation and does not call abandoned-checkout routes.
+- Reject uses the existing protection mutation and does not call abandoned-checkout routes.
 - Contact status is local page-session state only because the protection API has no contact-status field.
 - Product names, variants, prices, phone numbers, and addresses are rendered from server data without exposing hashes or internal network signals.
 - All visible copy remains English.
@@ -153,7 +153,7 @@ items: [
 source_route: "public_v1",
 ```
 
-Add assertions for `2 × Katimon Mango — 6KG · ৳1,180`, `1 × Honey · ৳800`, `Storefront checkout`, Call, WhatsApp, Copy, Awaiting contact, Dismiss, Accept, Reject, `Risk score`, and both reason codes. Also assert that the queue's select-all checkbox is present.
+Add assertions for `2 × Katimon Mango — 6KG · ৳1,180`, `1 × Honey · ৳800`, `Storefront checkout`, Call, WhatsApp, Copy, Awaiting contact, Accept, Reject, `Risk score`, and both reason codes. Also assert that the queue's select-all checkbox is present and Dismiss is absent.
 
 - [ ] **Step 2: Run the updated page test and verify it fails**
 
@@ -161,14 +161,13 @@ Run: `npm test -- --run src/test/orderProtectionPage.test.tsx`
 
 Expected: FAIL because the current protection card does not render the abandoned-style actions, product lines, source label, or selection controls.
 
-- [ ] **Step 3: Implement selection, copy, contact, and dismiss state**
+- [ ] **Step 3: Implement selection, copy, and contact state**
 
 In `OrderProtectionReviewQueue`:
 
 ```ts
 const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 const [contactStatus, setContactStatus] = useState<Record<string, "open" | "contacted">>({});
-const [dismissTarget, setDismissTarget] = useState<ProtectionReview | null>(null);
 ```
 
 Use immutable `Set` and record replacements. Add select-all and per-row checkbox controls with the same accessible roles and focus behavior as `AbandonedCheckoutQueue`. Contact status defaults to `open`, updates only local state, and never makes an API request. Copy the current protection summary through `navigator.clipboard.writeText`; expose success/failure through an `aria-live` region.
@@ -196,7 +195,6 @@ Use Phosphor `Phone`, `WhatsappLogo`, `Copy`, `CaretDown`, `Trash`, `Check`, and
 - Contact status uses `DropdownMenuRadioGroup` with `Awaiting contact` and `Contacted`, and updates only local state.
 - Accept calls `handleAction(review.id, "approve")`.
 - Reject calls `handleAction(review.id, "reject")`.
-- Dismiss opens an `AlertDialog`; confirmation calls `handleAction(review.id, "reject")`, so it persists the existing rejected decision and removes the review after success.
 - All action controls are disabled while the row mutation is in flight.
 
 Keep the existing loading, error, empty, fetch, approve, and reject behavior intact.

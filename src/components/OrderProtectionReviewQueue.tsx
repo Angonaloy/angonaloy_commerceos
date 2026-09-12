@@ -7,7 +7,6 @@ import {
   Copy,
   Phone,
   ShieldCheck,
-  Trash,
   WhatsappLogo,
   X,
 } from "@phosphor-icons/react";
@@ -19,16 +18,6 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Chip } from "@/components/base/badges/chip";
 import { Spinner } from "@/components/ui/ios-spinner";
 import {
@@ -53,8 +42,6 @@ const actionChip =
   "inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-caption-1-medium whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:cursor-wait disabled:opacity-45";
 const actionChipNeutral =
   "bg-background-secondary-default text-text-secondary hover:bg-background-secondary-hover hover:text-text-primary focus-visible:ring-black/30";
-const actionChipDanger =
-  "bg-status-rose-background text-status-rose-text hover:bg-background-quaternary-error focus-visible:ring-red-400/50";
 const actionChipApprove =
   "bg-status-lime-background text-status-lime-text hover:bg-status-lime-background/80 focus-visible:ring-black/30";
 
@@ -98,7 +85,6 @@ export function OrderProtectionReviewQueue() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [contactStatus, setContactStatus] = useState<Record<string, ContactStatus>>({});
-  const [dismissTarget, setDismissTarget] = useState<ProtectionReview | null>(null);
   const [copyStatus, setCopyStatus] = useState("");
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,13 +146,6 @@ export function OrderProtectionReviewQueue() {
     }
   };
 
-  const dismiss = () => {
-    if (!dismissTarget) return;
-    const reviewId = dismissTarget.id;
-    setDismissTarget(null);
-    void handleAction(reviewId, "reject");
-  };
-
   const toggleSelected = (reviewId: string) => {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -191,7 +170,7 @@ export function OrderProtectionReviewQueue() {
         </span>
       </div>
       {!loading && reviews.length > 0 && (
-        <div className="flex items-center gap-2 border-t border-black/[0.07] px-4 py-2 sm:px-6">
+        <div className="flex items-center gap-2 border-t border-black/[0.07] px-2 py-2 sm:px-3">
           <div
             data-testid="checkbox-protection-all"
             role="checkbox"
@@ -289,7 +268,7 @@ export function OrderProtectionReviewQueue() {
           return (
             <article
               key={review.id}
-              className="grid grid-cols-[auto_minmax(0,1fr)] gap-4 px-4 py-5 sm:px-6 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
+              className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 px-2 py-5 sm:px-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
             >
               <div
                 data-testid={`checkbox-protection-${review.id}`}
@@ -372,10 +351,10 @@ export function OrderProtectionReviewQueue() {
                     </button>
                   )}
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[8px] font-medium uppercase tracking-[0.3em] text-black/45">Risk reasons</span>
+                <div data-testid={`risk-reasons-${review.id}`} className="mt-2 flex min-w-0 flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
+                  <span className="shrink-0 text-[8px] font-medium uppercase tracking-[0.3em] text-black/45">Risk reasons</span>
                   {review.reason_codes.length > 0 ? review.reason_codes.map((reason) => (
-                    <Chip key={reason} variant="caption" color="rose">{reason}</Chip>
+                    <Chip key={reason} variant="caption" color="rose" className="shrink-0">{reason}</Chip>
                   )) : <span className="text-xs text-black/45">None</span>}
                 </div>
               </div>
@@ -447,16 +426,6 @@ export function OrderProtectionReviewQueue() {
                 </DropdownMenu>
                 <button
                   type="button"
-                  aria-label="Dismiss review"
-                  disabled={isUpdating}
-                  onClick={() => setDismissTarget(review)}
-                  className={cn(actionChip, actionChipDanger)}
-                >
-                  <Trash size={13} weight="light" aria-hidden />
-                  Dismiss
-                </button>
-                <button
-                  type="button"
                   aria-label={`Approve order for ${review.customer_name || "unnamed customer"}`}
                   className={cn(actionChip, actionChipApprove)}
                   disabled={isUpdating}
@@ -483,20 +452,6 @@ export function OrderProtectionReviewQueue() {
 
       <p className="sr-only" aria-live="polite">{copyStatus}</p>
 
-      <AlertDialog open={Boolean(dismissTarget)} onOpenChange={(open) => !open && setDismissTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Dismiss held review?</AlertDialogTitle>
-            <AlertDialogDescription>This will reject the held order and remove it from the review queue.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Keep review</AlertDialogCancel>
-            <AlertDialogAction onClick={dismiss} aria-label="Confirm dismiss" className="bg-red-600 text-white hover:bg-red-700">
-              Dismiss review
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
