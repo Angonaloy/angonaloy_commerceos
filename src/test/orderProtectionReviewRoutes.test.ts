@@ -21,6 +21,8 @@ describe("order protection review routes", () => {
     expect(route).toContain('.eq("status", "on_hold")');
     expect(route).toContain("approveHeldProtectionReview");
     expect(route).toContain('action === "approve"');
+    expect(route).toContain('contact_status: action');
+    expect(route).toContain('action === "contacted"');
   });
 
   it("claims a held review before creating an order", () => {
