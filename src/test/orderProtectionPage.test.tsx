@@ -46,7 +46,7 @@ describe("order protection dashboard", () => {
     expect(screen.getByText("phone_network_change")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Select all reviews" })).toBeInTheDocument();
     expect(screen.getByTestId("checkbox-protection-all").parentElement).toHaveClass("px-2", "sm:px-3");
-    expect(screen.getByTestId("checkbox-protection-review-1").closest("article")).toHaveClass("gap-2", "px-2", "sm:px-3");
+    expect(screen.getByTestId("checkbox-protection-review-1").closest("article")).toHaveClass("gap-2", "px-2", "sm:px-3", "bg-black/[0.025]");
     expect(screen.getByTestId("risk-reasons-review-1")).toHaveClass("flex-nowrap", "overflow-x-auto");
     expect(screen.getByRole("link", { name: /call 01712345678/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /open whatsapp for 01712345678/i })).toBeInTheDocument();

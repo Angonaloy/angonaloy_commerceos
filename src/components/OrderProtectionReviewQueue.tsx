@@ -268,7 +268,7 @@ export function OrderProtectionReviewQueue() {
           return (
             <article
               key={review.id}
-              className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 px-2 py-5 sm:px-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
+              className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 bg-black/[0.025] px-2 py-5 sm:px-3 lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center"
             >
               <div
                 data-testid={`checkbox-protection-${review.id}`}
