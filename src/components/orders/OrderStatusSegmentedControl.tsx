@@ -101,7 +101,7 @@ export function OrderStatusSegmentedControl({
           const selected = [...keys][0];
           if (selected) onChange(String(selected) as FulfillmentQueueTab);
         }}
-        className="w-max min-w-full rounded-xl bg-black/[0.045] p-1 ring-1 ring-black/[0.025] xl:grid xl:w-full xl:grid-cols-12"
+        className="w-max min-w-full rounded-xl bg-black/[0.045] p-1 ring-1 ring-black/[0.025] xl:flex xl:w-full"
       >
         {FULFILLMENT_QUEUE_TABS.filter((status) => status === "abandoned" || !hiddenStatuses.includes(status)).map((status) => {
           const presentation = STATUS_PRESENTATION[status];
@@ -114,7 +114,7 @@ export function OrderStatusSegmentedControl({
               id={status}
               aria-label={`${presentation.label}: ${loading ? "loading" : formattedCount}`}
               className={({ isSelected }) => [
-                "min-w-[112px] rounded-lg px-3 py-2 xl:min-w-0 xl:w-full",
+                "min-w-[112px] rounded-lg px-3 py-2 xl:min-w-0 xl:flex-1",
                 "hover:bg-white/45 data-[pressed]:scale-[0.99]",
                 isSelected ? "text-black" : "text-black/55",
               ].join(" ")}

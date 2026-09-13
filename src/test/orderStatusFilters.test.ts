@@ -59,6 +59,7 @@ describe("order status filters", () => {
     [order("steadfast-destination-received", { status: "print", sent_to_courier: true, courier_name: "steadfast", courier_status: "Consignment has been received at HATHAZARI" }), "in_transit"],
     [order("steadfast-picked-up", { status: "print", sent_to_courier: true, courier_name: "steadfast", courier_status: "Picked Up" }), "in_transit"],
     [order("steadfast-fraud", { status: "print", sent_to_courier: true, courier_name: "steadfast", courier_status: "Pending", fraud_checked: true, fraud_data: { total_parcels: 10, total_delivered: 4, total_cancel: 6 } }), "flagged"],
+    [order("legacy-steadfast-transit", { status: "print", sent_to_courier: true, courier_message: "Sent to Steadfast successfully", courier_status: "In Transit" }), "in_transit"],
     [order("ready", { status: "confirmed", fulfillment_status: "fulfilled" }), "ready_to_ship"],
     [order("explicit-ready", { status: "ready-to-ship" }), "ready_to_ship"],
     [order("flagged", {

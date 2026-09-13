@@ -70,7 +70,10 @@ function isCancelledState(value: string) {
 }
 
 function isSteadfastOrder(order: StatusFilterOrder) {
-  return order.courier_name === "steadfast" && order.sent_to_courier === true;
+  return order.sent_to_courier === true && (
+    order.courier_name === "steadfast" ||
+    (!order.courier_name && (order.courier_message || "").toLowerCase().includes("steadfast"))
+  );
 }
 
 function isSteadfastTransitStatus(status: string) {

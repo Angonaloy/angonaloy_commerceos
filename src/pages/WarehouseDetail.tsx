@@ -381,7 +381,7 @@ export default function WarehouseDetail() {
             <div className="py-16 text-center"><WarningCircle size={28} weight="light" className="mx-auto text-black/20" /><p className="mt-2 text-[12px] text-black/45">Couldn’t load warehouse orders.</p><button type="button" onClick={() => void orders.refetch()} className="mt-3 text-[12px] font-medium underline underline-offset-4">Try again</button></div>
           ) : (
             <>
-              <OrdersTable orders={visibleWarehouseOrders} loading={orders.isLoading} onStatusUpdate={() => void orders.refetch()} onOrderUpdate={() => void orders.refetch()} selectedIds={selectedOrderIds} onSelectionChange={setSelectedOrderIds} />
+              <OrdersTable orders={visibleWarehouseOrders} loading={orders.isLoading} onStatusUpdate={() => void orders.refetch()} onOrderUpdate={() => void orders.refetch()} showRiskColumn={false} selectedIds={selectedOrderIds} onSelectionChange={setSelectedOrderIds} />
               <OrderTablePagination
                 page={orderSafePage}
                 pageSize={orderPageSize}
