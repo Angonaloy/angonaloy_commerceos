@@ -19,6 +19,7 @@ const WarehouseDetail = lazy(() => import("./pages/WarehouseDetail"));
 const ProductNew = lazy(() => import("./pages/ProductNew"));
 const ProductEdit = lazy(() => import("./pages/ProductEdit"));
 const OrderDetail = lazy(() => import("./pages/OrderDetail"));
+const NewOrder = lazy(() => import("./pages/NewOrder"));
 const AbandonedDetail = lazy(() => import("./pages/AbandonedDetail"));
 const Customers = lazy(() => import("./pages/Customers"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
@@ -33,6 +34,7 @@ const Returns = lazy(() => import("./pages/Returns"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const OnlineStore = lazy(() => import("./pages/OnlineStore"));
 const Overview = lazy(() => import("./pages/Overview"));
+const OrderProtection = lazy(() => import("./pages/OrderProtection"));
 import { Spinner } from "@/components/ui/ios-spinner";
 
 function RouteFallback() {
@@ -109,6 +111,7 @@ const AppRoutes = () => (
     >
       <Route path="/" element={<Dashboard />} />
       <Route path="/overview" element={<Overview />} />
+      <Route path="/order-protection" element={<AdminRoute><OrderProtection /></AdminRoute>} />
       <Route path="/order-analysis" element={<AdminRoute><OrderAnalysis /></AdminRoute>} />
       <Route path="/order-chat" element={<OrderChat />} />
       <Route path="/settings" element={<Settings />} />
@@ -118,6 +121,7 @@ const AppRoutes = () => (
       <Route path="/products/:id/edit" element={<ProductEdit />} />
       <Route path="/warehouses" element={<Warehouses />} />
       <Route path="/warehouses/:id" element={<WarehouseDetail />} />
+      <Route path="/orders/new" element={<NewOrder />} />
       <Route path="/orders/:id" element={<OrderDetail />} />
       <Route path="/abandoned/:id" element={<AbandonedDetail />} />
       <Route path="/customers" element={<Customers />} />

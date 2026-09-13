@@ -18,7 +18,7 @@ describe("order routing wiring", () => {
     expect(source).toContain("resolveWarehouseId");
     expect(source).toContain("computeOrderWeightKg");
     expect(source.match(/async function resolveOrderRouting\(/g)).toHaveLength(1);
-    expect(source.match(/await resolveOrderRouting\(/g)).toHaveLength(6);
+    expect(source.match(/await resolveOrderRouting\(/g)).toHaveLength(7);
   });
 
   it("org-scopes every routing lookup and throws lookup errors", () => {
@@ -138,6 +138,8 @@ describe("order routing wiring", () => {
     expect(orderRow).toContain("warehouse_id: routing.warehouseId");
     expect(orderRow).toContain("warehouse_auto: true");
     expect(orderRow).toContain("weight_kg: routing.weightKg");
+    expect(orderRow).toContain("notes: null");
+    expect(orderRow).not.toContain("notes: notes || null");
     expect(orderRow).not.toContain("req.body.warehouse");
     expect(checkout).toContain('"Each item must have a variantId"');
     expect(checkout).toContain("variant.stock_quantity < qty");

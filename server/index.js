@@ -14,7 +14,7 @@ import Stripe from "stripe";
 import { computeOrderCogs } from "./cog.js";
 import { buildOverviewData } from "./overview.js";
 import { buildSalesTrend } from "./salesTrend.js";
-import { calculateShippingCost } from "./shippingCalculation.js";
+import { calculateStorefrontShippingCost } from "./shippingCalculation.js";
 import {
   computeOrderWeightKg,
   parseOptionalWeightKg,
@@ -71,6 +71,12 @@ import {
   parseAbandonedCheckoutCapture,
   parseAbandonedCheckoutStaffEdit,
 } from "./abandonedCheckouts.js";
+import {
+  hashProtectionSignal,
+  listProtectionReviews,
+} from "./orderProtectionStore.js";
+import { protectOrderSubmission } from "./orderProtectionPipeline.js";
+import { validateAddressWithAI } from "./addressValidation.js";
 
 // ─── AI provider (OpenAI-compatible, supports OpenRouter and any
 //     OpenAI-compatible gateway like GMI Cloud) ─────────────────────────────
@@ -217,6 +223,7 @@ let rlHandleClaimUser = null;
 let rlHandleClaimIp = null;
 let rlPublicRead = null;
 let rlAbandonedCheckoutCapture = null;
+let rlOrderSubmission = null;
 
 // Cloudflare edge-cache purge + warm-token bypass (Task 1).
 const CLOUDFLARE_ZONE_ID = process.env.CLOUDFLARE_ZONE_ID || "";
@@ -264,6 +271,11 @@ if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) 
       redis: redisClient,
       limiter: Ratelimit.slidingWindow(30, "10 m"),
       prefix: "rl:abandoned-checkout:capture",
+    });
+    rlOrderSubmission = new Ratelimit({
+      redis: redisClient,
+      limiter: Ratelimit.slidingWindow(10, "15 m"),
+      prefix: "rl:order-submission",
     });
     console.log("[RateLimit] Upstash Redis connected.");
   } catch (err) {
@@ -381,6 +393,40 @@ const rateLimitPublicRead = (req, res, next) => {
   const handle = req.params.handle || req.params.storefrontId || "*";
   return makeRateLimitMiddleware(rlPublicRead, "ip")({ ...req, __forceId: `${ip}:${handle}` }, res, next);
 };
+
+function getClientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"]?.split(",")[0]?.trim();
+  return req.headers["cf-connecting-ip"] || forwarded || req.socket.remoteAddress || "unknown";
+}
+
+async function allowOrderSubmission(req, res, orgId, handle = "*") {
+  if (!rlOrderSubmission) return true;
+  const limiterSecret = process.env.ORDER_PROTECTION_HASH_SECRET || "order-protection-unconfigured";
+  const ipHash = hashProtectionSignal(getClientIp(req), limiterSecret);
+  try {
+    const { success, limit, remaining, reset } = await rlOrderSubmission.limit(`${orgId}:${handle}:${ipHash}`);
+    res.setHeader("X-RateLimit-Limit", limit);
+    res.setHeader("X-RateLimit-Remaining", remaining);
+    res.setHeader("X-RateLimit-Reset", reset);
+    if (success) return true;
+    const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+    res.setHeader("Retry-After", retryAfter);
+    res.status(429).json({
+      error: "rate_limit_exceeded",
+      message: "Too many order attempts. Please try again shortly.",
+      retryAfter,
+    });
+    return false;
+  } catch (error) {
+    console.warn("[OrderProtection] order limiter unavailable:", error.message);
+    res.status(503).json({
+      error: "protection_unavailable",
+      message: "Order protection is temporarily unavailable. Please try again shortly.",
+      retryable: true,
+    });
+    return false;
+  }
+}
 const PRODUCT_IMAGES_BUCKET = "product-images";
 const PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const PRODUCT_IMAGE_MAX_COUNT = 8;
@@ -821,6 +867,45 @@ async function checkFraudStatus(phone, apiKey) {
   }
 }
 
+const MAX_MANUAL_SMS_LENGTH = 1000;
+
+function bulkSmsError(message, statusCode) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+async function submitBulkSmsMessage({ apiKey, senderId, phone: rawPhone, message }) {
+  const phone = normalizeBdPhone(rawPhone);
+  if (!phone) {
+    return { accepted: false, statusCode: 422, errorMessage: "Invalid phone number" };
+  }
+
+  const bulkSmsPhone = `880${phone.slice(1)}`;
+  const url = `https://bulksmsbd.net/api/smsapi?api_key=${encodeURIComponent(apiKey)}&type=text&number=${encodeURIComponent(bulkSmsPhone)}&senderid=${encodeURIComponent(senderId)}&message=${encodeURIComponent(message)}`;
+
+  try {
+    const response = await fetch(url);
+    const data = await response.json().catch(() => null);
+    const responseCode = Number(data?.response_code);
+    const maskedPhone = `${bulkSmsPhone.slice(0, 5)}****${bulkSmsPhone.slice(-2)}`;
+    if (response.ok && responseCode === 202) {
+      console.log(`[BulkSMS] SMS submitted to ${maskedPhone}`, { responseCode });
+      return { accepted: true, responseCode };
+    }
+
+    const errorMessage = data?.error_message || data?.message || `HTTP ${response.status}`;
+    console.error(`[BulkSMS] SMS submission failed for ${maskedPhone}`, {
+      responseCode: data?.response_code ?? null,
+      errorMessage,
+    });
+    return { accepted: false, statusCode: 502, errorMessage };
+  } catch (error) {
+    console.error("[BulkSMS] Gateway request failed:", error instanceof Error ? error.message : String(error));
+    return { accepted: false, statusCode: 502, errorMessage: "Bulk SMS gateway unavailable" };
+  }
+}
+
 async function sendBulkSms(orgId, type, order) {
   try {
     const keys = [
@@ -856,10 +941,6 @@ async function sendBulkSms(orgId, type, order) {
     
     if (!template.trim() || !order.phone) return;
     
-    const phone = normalizeBdPhone(order.phone);
-    if (!phone) return;
-    const bulkSmsPhone = `880${phone.slice(1)}`;
-
     let message = template
       .replace(/{customer_name}/g, order.customer_name || "")
       .replace(/{order_id}/g, order.order_number || "")
@@ -868,23 +949,39 @@ async function sendBulkSms(orgId, type, order) {
       .replace(/{courier_name}/g, order.courier_name || "")
       .replace(/{tracking_code}/g, order.tracking_code || "");
       
-    const url = `https://bulksmsbd.net/api/smsapi?api_key=${encodeURIComponent(apiKey)}&type=text&number=${encodeURIComponent(bulkSmsPhone)}&senderid=${encodeURIComponent(senderId)}&message=${encodeURIComponent(message)}`;
-
-    const response = await fetch(url);
-    const data = await response.json().catch(() => null);
-    const responseCode = Number(data?.response_code);
-    if (response.ok && responseCode === 202) {
-      console.log(`[BulkSMS] SMS submitted to ${bulkSmsPhone}`, { responseCode });
-    } else {
-      const errorMessage = data?.error_message || data?.message || `HTTP ${response.status}`;
-      console.error(`[BulkSMS] SMS submission failed for ${bulkSmsPhone}`, {
-        responseCode: data?.response_code ?? null,
-        errorMessage,
-      });
-    }
+    await submitBulkSmsMessage({ apiKey, senderId, phone: order.phone, message });
 
   } catch (err) {
     console.error("[BulkSMS] Error in sendBulkSms:", err);
+  }
+}
+
+async function sendManualBulkSms(orgId, order, message) {
+  const settings = await getSettings([
+    `${orgId}:bulksms_enabled`,
+    `${orgId}:bulksms_api_key`,
+    `${orgId}:bulksms_sender_id`,
+  ]);
+  if (settings[`${orgId}:bulksms_enabled`] !== "true") {
+    throw bulkSmsError("Bulk SMS is disabled. Enable it in Settings → Integrations.", 409);
+  }
+
+  const apiKey = String(settings[`${orgId}:bulksms_api_key`] || "").trim();
+  const senderId = String(settings[`${orgId}:bulksms_sender_id`] || "").trim();
+  if (!apiKey || !senderId) {
+    throw bulkSmsError("Bulk SMS credentials are not configured. Go to Settings → Integrations.", 409);
+  }
+
+  if (typeof message !== "string" || !message.trim()) {
+    throw bulkSmsError("Message cannot be empty", 422);
+  }
+  if ([...message].length > MAX_MANUAL_SMS_LENGTH) {
+    throw bulkSmsError(`Message cannot exceed ${MAX_MANUAL_SMS_LENGTH} characters`, 422);
+  }
+
+  const result = await submitBulkSmsMessage({ apiKey, senderId, phone: order.phone, message });
+  if (!result.accepted) {
+    throw bulkSmsError(result.errorMessage || "Bulk SMS submission failed", result.statusCode || 502);
   }
 }
 
@@ -2925,6 +3022,8 @@ async function provisionStorefrontProject(orgId, customOrdersApiKey) {
   if (!MERCHANT_SUITE_PUBLIC_URL) return { ok: false, error: "MERCHANT_SUITE_PUBLIC_URL not set — the public URL of this Merchant Suite deploy" };
 
   const projectName = `storefront-${orgId.slice(0, 8)}`;
+  const storefrontHandle = await getStorefrontHandle(orgId);
+  if (!storefrontHandle) return { ok: false, error: "Storefront handle is not configured" };
 
   // Vercel's git linking needs BOTH the repo name AND the numeric repoId.
   let repoId = "";
@@ -2958,7 +3057,10 @@ async function provisionStorefrontProject(orgId, customOrdersApiKey) {
   const envVars = [
     { key: "VITE_MERCHANT_SUITE_URL", value: MERCHANT_SUITE_PUBLIC_URL, type: "encrypted", target: ["production", "preview", "development"] },
     { key: "VITE_STOREFRONT_ID", value: orgId, type: "encrypted", target: ["production", "preview", "development"] },
+    { key: "VITE_STOREFRONT_HANDLE", value: storefrontHandle, type: "encrypted", target: ["production", "preview", "development"] },
+    { key: "VITE_TURNSTILE_SITE_KEY", value: process.env.TURNSTILE_SITE_KEY || "", type: "plain", target: ["production", "preview", "development"] },
     { key: "MERCHANT_SUITE_URL", value: MERCHANT_SUITE_PUBLIC_URL, type: "encrypted", target: ["production", "preview", "development"] },
+    { key: "STOREFRONT_HANDLE", value: storefrontHandle, type: "encrypted", target: ["production", "preview", "development"] },
     { key: "CUSTOM_ORDERS_API_KEY", value: customOrdersApiKey, type: "encrypted", target: ["production", "preview", "development"] },
   ];
   for (const ev of envVars) {
@@ -5796,7 +5898,7 @@ app.patch("/api/abandoned-checkouts/:id", async (req, res) => {
         return res.status(400).json({ error: "Invalid checkout action" });
       }
       const action = req.body.action;
-      if (action !== "contacted" && action !== "dismissed") {
+      if (action !== "contacted" && action !== "dismissed" && action !== "open") {
         return res.status(400).json({ error: "Invalid checkout action" });
       }
     }
@@ -5818,7 +5920,7 @@ app.patch("/api/abandoned-checkouts/:id", async (req, res) => {
     let patch;
     if (hasAction) {
       const action = req.body.action;
-      if (action !== "contacted" && action !== "dismissed") {
+      if (action !== "contacted" && action !== "dismissed" && action !== "open") {
         return res.status(400).json({ error: "Invalid checkout action" });
       }
       patch = buildStaffActionPatch(current.status, action, now);
@@ -6527,6 +6629,36 @@ app.post("/api/custom-orders/webhook", async (req, res) => {
       return res.status(401).json({ error: "Invalid API Key" });
     }
 
+    if (!(await allowOrderSubmission(req, res, orgId))) return;
+    const protection = await protectOrderSubmission({
+      input: {
+        orgId,
+        route: "custom_webhook",
+        customerName: req.body?.customer_name,
+        phone: req.body?.phone,
+        address: req.body?.address,
+        notes: req.body?.notes,
+        items: req.body?.items,
+        website: req.body?.website,
+        turnstileToken: req.body?.turnstile_token,
+        clientSessionId: req.body?.client_session_id,
+        checkoutStartedAt: req.body?.checkout_started_at,
+        shippingZoneId: req.body?.shipping_zone_id,
+      },
+      requestMeta: { ip: getClientIp(req), userAgent: req.headers["user-agent"] },
+      dependencies: { redis: redisClient, supabase, validateAddress: validateAddressWithAI },
+    });
+    if (protection.protection.decision === "REVIEW") {
+      return res.status(202).json({ ok: true, decision: "review", review_id: protection.review?.id || null });
+    }
+    if (protection.protection.decision === "BLOCK") {
+      return res.status(protection.protection.retryable ? 503 : 403).json({
+        error: protection.protection.retryable ? "protection_unavailable" : "order_not_accepted",
+        message: protection.protection.customerMessage,
+        retryable: protection.protection.retryable,
+      });
+    }
+
     // Validate and format incoming order data
     const allowed = [
       "customer_name",
@@ -6659,6 +6791,7 @@ app.post("/api/custom-orders/webhook", async (req, res) => {
 
     return res.status(201).json({
       success: true,
+      decision: "allow",
       order_id: persistedOrder.order_number,
       order: persistedOrder,
     });
@@ -7151,6 +7284,37 @@ app.patch("/api/orders/:id", async (req, res) => {
     return res.json({ success: true, order: data });
   } catch (e) {
     return sendError(res, e);
+  }
+});
+
+app.post("/api/orders/:id/send-sms", async (req, res) => {
+  try {
+    const { user } = await getUser(getToken(req));
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+
+    const rawMessage = req.body?.message;
+    if (typeof rawMessage !== "string" || !rawMessage.trim()) {
+      return res.status(422).json({ error: "Message cannot be empty" });
+    }
+    if ([...rawMessage].length > MAX_MANUAL_SMS_LENGTH) {
+      return res.status(422).json({ error: `Message cannot exceed ${MAX_MANUAL_SMS_LENGTH} characters` });
+    }
+
+    const supabase = getServiceSupabase();
+    const { orgId } = await getUserOrg(supabase, user.id);
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .select("id, order_number, phone")
+      .eq("id", req.params.id)
+      .eq("org_id", orgId)
+      .maybeSingle();
+    if (orderError) throw orderError;
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    await sendManualBulkSms(orgId, order, rawMessage);
+    return res.json({ success: true });
+  } catch (error) {
+    return sendError(res, error);
   }
 });
 
@@ -10866,6 +11030,254 @@ async function handlePublicHandleConfig(req, res) {
   }
 }
 
+// ─── Order Protection Review Queue ───────────────────────────────────────────
+async function requireOrderProtectionStaff(req) {
+  const { user } = await getUser(getToken(req));
+  if (!user) return { user: null, supabase: null, orgId: null, role: null };
+  const supabase = getServiceSupabase();
+  const { orgId, role } = await getUserOrg(supabase, user.id);
+  return { user, supabase, orgId, role };
+}
+
+async function approveHeldProtectionReview(supabase, orgId, reviewId) {
+  const claimTime = new Date().toISOString();
+  const { data: review, error: reviewError } = await supabase
+    .from("order_protection_reviews")
+    .update({ approval_claimed_at: claimTime, updated_at: claimTime })
+    .eq("id", reviewId)
+    .eq("org_id", orgId)
+    .eq("status", "on_hold")
+    .is("approval_claimed_at", null)
+    .select("*")
+    .maybeSingle();
+  if (reviewError) throw reviewError;
+  if (!review) {
+    const err = new Error("Review is no longer awaiting action");
+    err.statusCode = 409;
+    throw err;
+  }
+
+  try {
+    const items = Array.isArray(review.items) ? review.items : [];
+    const variantIds = items.map((item) => item?.variantId).filter(Boolean);
+    if (variantIds.length !== items.length || items.length === 0) {
+      const err = new Error("This compatibility review needs a fresh canonical checkout");
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const { data: variants, error: variantsError } = await supabase
+    .from("product_variants")
+    .select("id, product_id, attributes, price_adjustment, stock_quantity, weight_kg")
+    .in("id", variantIds)
+    .eq("org_id", orgId);
+    if (variantsError) throw variantsError;
+    const variantMap = Object.fromEntries((variants || []).map((variant) => [variant.id, variant]));
+    const productIds = [...new Set((variants || []).map((variant) => variant.product_id))];
+    const { data: products, error: productsError } = await supabase
+    .from("products")
+    .select("id, name, selling_price, published, weight_kg, warehouse_id")
+    .in("id", productIds)
+    .eq("org_id", orgId)
+    .eq("published", true);
+    if (productsError) throw productsError;
+    const productMap = Object.fromEntries((products || []).map((product) => [product.id, product]));
+
+    const orderItems = [];
+    let subtotal = 0;
+    for (const item of items) {
+    const variant = variantMap[item.variantId];
+    const product = variant ? productMap[variant.product_id] : null;
+    const quantity = Number.isSafeInteger(item.quantity) ? item.quantity : 0;
+    if (!variant || !product || quantity < 1 || variant.stock_quantity < quantity) {
+      const err = new Error("Catalog or stock changed; review remains on hold");
+      err.statusCode = 409;
+      throw err;
+    }
+    const unitPrice = (parseFloat(product.selling_price) || 0) + (parseFloat(variant.price_adjustment) || 0);
+    orderItems.push({
+      productId: product.id,
+      variantId: variant.id,
+      productName: product.name,
+      attributes: variant.attributes || {},
+      quantity,
+      unitPrice,
+    });
+    subtotal += unitPrice * quantity;
+    }
+
+    let shipping = 0;
+    let shippingZones = [];
+    if (review.shipping_zone_id) {
+    const { data: settings, error: settingsError } = await supabase
+      .from("storefront_settings")
+      .select("shipping_zones")
+      .eq("org_id", orgId)
+      .maybeSingle();
+    if (settingsError) throw settingsError;
+    shippingZones = settings?.shipping_zones || [];
+    }
+    const shippingResult = calculateStorefrontShippingCost(subtotal, review.shipping_zone_id, shippingZones);
+    if (shippingResult.error) {
+      const err = new Error("Shipping configuration changed; review remains on hold");
+      err.statusCode = 409;
+      throw err;
+    }
+    shipping = shippingResult.cost;
+
+    const routing = await resolveOrderRouting(supabase, orgId, orderItems);
+    const orderNumber = await getNextManualOrderNumber(orgId);
+    const { data: order, error: orderError } = await supabase
+    .from("orders")
+    .insert({
+      org_id: orgId,
+      shopify_order_id: -(Math.floor(Math.random() * 9_000_000_000_000) + 1_000_000_000_000),
+      order_number: orderNumber,
+      customer_name: review.customer_name,
+      phone: normalizeBdPhone(review.phone),
+      address: review.address,
+      product: orderItems.map((item) => `${item.productName} x${item.quantity}`).join(", "),
+      quantity: orderItems.reduce((sum, item) => sum + item.quantity, 0),
+      price: subtotal,
+      delivery_rate: shipping,
+      status: "pending",
+      source: "storefront_review",
+      warehouse_id: routing.warehouseId,
+      warehouse_auto: true,
+      weight_kg: routing.weightKg,
+      notes: review.notes,
+    })
+    .select("*")
+    .single();
+    if (orderError) throw orderError;
+
+    const { error: itemsError } = await supabase.from("order_items").insert(orderItems.map((item) => ({
+    org_id: orgId,
+    order_id: order.id,
+    product_id: item.productId,
+    variant_id: item.variantId,
+    product_name: item.productName,
+    variant_name: JSON.stringify(item.attributes),
+    unit_price: item.unitPrice,
+    quantity: item.quantity,
+  })));
+    if (itemsError) {
+    await supabase.from("orders").delete().eq("id", order.id).eq("org_id", orgId);
+    throw itemsError;
+    }
+
+    for (const item of orderItems) {
+    const currentStock = variantMap[item.variantId].stock_quantity;
+    const { data: updatedVariants, error: stockError } = await supabase
+      .from("product_variants")
+      .update({ stock_quantity: currentStock - item.quantity })
+      .eq("id", item.variantId)
+      .eq("org_id", orgId)
+      .eq("stock_quantity", currentStock)
+      .select("id");
+    if (stockError || updatedVariants?.length !== 1) {
+      await supabase.from("order_items").delete().eq("order_id", order.id).eq("org_id", orgId);
+      await supabase.from("orders").delete().eq("id", order.id).eq("org_id", orgId);
+      const err = new Error("Stock changed; review remains on hold");
+      err.statusCode = 409;
+      throw err;
+    }
+    }
+
+    const { error: reviewUpdateError } = await supabase
+    .from("order_protection_reviews")
+    .update({ status: "approved", approval_claimed_at: null, updated_at: new Date().toISOString() })
+    .eq("id", reviewId)
+    .eq("org_id", orgId)
+    .eq("status", "on_hold");
+    if (reviewUpdateError) throw reviewUpdateError;
+
+    await sendBulkSms(orgId, "confirmation", order);
+    await purgeProductCache(orgId, null, { listChanged: false, warm: false });
+    return { orderRef: String(orderNumber), order };
+  } catch (error) {
+    await supabase
+      .from("order_protection_reviews")
+      .update({ approval_claimed_at: null, updated_at: new Date().toISOString() })
+      .eq("id", reviewId)
+      .eq("org_id", orgId)
+      .eq("status", "on_hold")
+      .eq("approval_claimed_at", claimTime);
+    throw error;
+  }
+}
+
+app.get("/api/order-protection/reviews", async (req, res) => {
+  try {
+    const { user, supabase, orgId } = await requireOrderProtectionStaff(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const allowedStatuses = new Set(["on_hold", "approved", "rejected", "expired"]);
+    const status = allowedStatuses.has(req.query.status) ? req.query.status : "on_hold";
+    const reviews = await listProtectionReviews({ supabase, orgId, status });
+    return res.json({ reviews });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+app.get("/api/order-protection/events", async (req, res) => {
+  try {
+    const { user, supabase, orgId } = await requireOrderProtectionStaff(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const { data, error } = await supabase
+      .from("order_protection_events")
+      .select("id, review_id, order_id, route, decision, score, reason_codes, created_at, expires_at")
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return res.json({ events: data || [] });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+app.patch("/api/order-protection/reviews/:id", async (req, res) => {
+  try {
+    const { user, supabase, orgId } = await requireOrderProtectionStaff(req);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    const action = req.body?.action;
+    if (action !== "approve" && action !== "reject" && action !== "open" && action !== "contacted") {
+      return res.status(400).json({ error: "action must be approve, reject, open, or contacted" });
+    }
+    if (action === "approve") {
+      const result = await approveHeldProtectionReview(supabase, orgId, req.params.id);
+      return res.json({ success: true, decision: "approved", ...result });
+    }
+    if (action === "open" || action === "contacted") {
+      const { data, error } = await supabase
+        .from("order_protection_reviews")
+        .update({ contact_status: action, updated_at: new Date().toISOString() })
+        .eq("id", req.params.id)
+        .eq("org_id", orgId)
+        .eq("status", "on_hold")
+        .select("id, status, contact_status")
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(409).json({ error: "Review is no longer awaiting action" });
+      return res.json({ success: true, decision: "contact_status_updated", review: data });
+    }
+    const { data, error } = await supabase
+      .from("order_protection_reviews")
+      .update({ status: "rejected", updated_at: new Date().toISOString() })
+      .eq("id", req.params.id)
+      .eq("org_id", orgId)
+      .eq("status", "on_hold")
+      .select("id, status")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(409).json({ error: "Review is no longer awaiting action" });
+    return res.json({ success: true, decision: "rejected", review: data });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
 // ─── Public Storefront Order Submission ──────────────────────────────────────
 // Accepts orders from the storefront checkout flow. No authentication required —
 // the storefront is public. Validates stock, calculates shipping from zones,
@@ -10875,8 +11287,16 @@ async function handlePublicHandleOrderSubmit(req, res) {
     const orgId = await resolveStorefrontHandle(req.params.handle);
     if (!orgId) return res.status(404).json({ error: "not_found" });
 
+    if (!(await allowOrderSubmission(req, res, orgId, req.params.handle))) return;
+
     const supabase = getServiceSupabase();
-    const { customerName, phone, address, items, shippingZoneId, notes } = req.body || {};
+    const body = req.body || {};
+    const customerName = body.customerName ?? body.customer_name;
+    const phone = body.phone;
+    const address = body.address;
+    const items = body.items;
+    const shippingZoneId = body.shippingZoneId ?? body.shipping_zone_id;
+    const notes = body.notes;
 
     // ── Validate required fields ─────────────────────────────────────────
     if (!customerName || typeof customerName !== "string") {
@@ -10897,6 +11317,41 @@ async function handlePublicHandleOrderSubmit(req, res) {
     const variantIds = items.map((i) => i.variantId).filter(Boolean);
     if (variantIds.length !== items.length) {
       return res.status(400).json({ error: "Each item must have a variantId" });
+    }
+
+    const protection = await protectOrderSubmission({
+      input: {
+        orgId,
+        route: "public_v1",
+        customerName,
+        phone: cleanPhone,
+        address,
+        notes,
+        items,
+        website: req.body?.website,
+        turnstileToken: body.turnstileToken || body.turnstile_token,
+        clientSessionId: body.clientSessionId || body.client_session_id,
+        checkoutStartedAt: body.checkoutStartedAt || body.checkout_started_at,
+        shippingZoneId,
+      },
+      requestMeta: { ip: getClientIp(req), userAgent: req.headers["user-agent"] },
+      dependencies: { redis: redisClient, supabase, validateAddress: validateAddressWithAI },
+    });
+    if (protection.protection.decision === "REVIEW") {
+      return res.status(202).json({
+        success: false,
+        decision: "review",
+        reviewId: protection.review?.id || null,
+        message: protection.protection.customerMessage,
+      });
+    }
+    if (protection.protection.decision === "BLOCK") {
+      return res.status(protection.protection.retryable ? 503 : 403).json({
+        decision: "block",
+        error: protection.protection.retryable ? "protection_unavailable" : "order_not_accepted",
+        message: protection.protection.customerMessage,
+        retryable: protection.protection.retryable,
+      });
     }
 
     // Fetch all variants + their parent products in one pass
@@ -10964,6 +11419,7 @@ async function handlePublicHandleOrderSubmit(req, res) {
 
     // ── Shipping calculation ─────────────────────────────────────────────
     let shipping = 0;
+    let shippingZones = [];
     if (shippingZoneId) {
       const { data: settings } = await supabase
         .from("storefront_settings")
@@ -10971,15 +11427,41 @@ async function handlePublicHandleOrderSubmit(req, res) {
         .eq("org_id", orgId)
         .maybeSingle();
 
-      const zones = settings?.shipping_zones || [];
-      const shippingResult = calculateShippingCost(subtotal, shippingZoneId, zones);
-      if (shippingResult.error) {
-        return res.status(400).json({ error: shippingResult.error });
-      }
-      shipping = shippingResult.cost;
+      shippingZones = settings?.shipping_zones || [];
     }
+    const shippingResult = calculateStorefrontShippingCost(subtotal, shippingZoneId, shippingZones);
+    if (shippingResult.error) {
+      return res.status(400).json({ error: shippingResult.error });
+    }
+    shipping = shippingResult.cost;
 
     const total = subtotal + shipping;
+
+    // Preserve the abandoned-checkout handoff without storing the raw draft key.
+    const submittedDraftKey = body.abandonedCheckoutDraftKey || body.abandoned_checkout_draft_key;
+    const abandonedDraftKey = isAbandonedCheckoutDraftKey(submittedDraftKey)
+      ? submittedDraftKey.toLowerCase()
+      : null;
+    const abandonedDraftKeyHash = abandonedDraftKey
+      ? hashAbandonedCheckoutDraftKey(abandonedDraftKey)
+      : null;
+    let matchingAbandonedCheckout = null;
+    if (abandonedDraftKey) {
+      try {
+        const { data: checkout, error: checkoutError } = await supabase
+          .from("abandoned_checkouts")
+          .select("id")
+          .eq("org_id", orgId)
+          .eq("draft_key", abandonedDraftKey)
+          .in("status", ACTIVE_ABANDONED_CHECKOUT_STATUSES)
+          .gt("expires_at", new Date().toISOString())
+          .maybeSingle();
+        if (checkoutError) throw checkoutError;
+        matchingAbandonedCheckout = checkout || null;
+      } catch {
+        console.warn("[AbandonedCheckout] public order recovery lookup deferred");
+      }
+    }
 
     // ── Build order product string (summary of all items) ───────────────
     const productSummary = orderItems
@@ -11011,7 +11493,12 @@ async function handlePublicHandleOrderSubmit(req, res) {
       warehouse_id: routing.warehouseId,
       warehouse_auto: true,
       weight_kg: routing.weightKg,
-      notes: notes || null,
+      // The storefront currently sends its bundle title/details in `notes`.
+      // Product and variant data already have authoritative columns below, so
+      // do not duplicate that display metadata in the dashboard custom note.
+      notes: null,
+      ...(abandonedDraftKeyHash ? { abandoned_draft_key_hash: abandonedDraftKeyHash } : {}),
+      ...(matchingAbandonedCheckout ? { abandoned_checkout_id: matchingAbandonedCheckout.id } : {}),
     };
 
     const { data: order, error: orderErr } = await supabase
@@ -11047,11 +11534,27 @@ async function handlePublicHandleOrderSubmit(req, res) {
         .eq("org_id", orgId);
     }
 
+    if (matchingAbandonedCheckout) {
+      try {
+        await recoverCapturedCheckoutForOrder(
+          supabase,
+          orgId,
+          matchingAbandonedCheckout.id,
+          order,
+          new Date(),
+        );
+      } catch {
+        console.warn("[AbandonedCheckout] public order recovery update deferred");
+      }
+    }
+
     // ── Purge inventory cache so storefront reflects new stock ───────────
     await purgeProductCache(orgId, null, { listChanged: false, warm: false });
 
     return res.json({
       success: true,
+      decision: "allow",
+      orderRef: String(orderNumber),
       orderId: orderNumber,
       total,
       shipping,
@@ -11171,7 +11674,7 @@ async function handlePublicHandleProductInventory(req, res) {
 
 app.get("/api/public/v1/:handle/config", rateLimitPublicRead, handlePublicHandleConfig);
 app.get("/api/public/v1/:handle/products", rateLimitPublicRead, handlePublicHandleProducts);
-app.post("/api/public/v1/:handle/orders", rateLimitPublicRead, handlePublicHandleOrderSubmit);
+app.post("/api/public/v1/:handle/orders", handlePublicHandleOrderSubmit);
 app.get("/api/public/v1/:handle/products/:slug", rateLimitPublicRead, handlePublicHandleProductDetail);
 app.get("/api/public/v1/:handle/products/:slug/inventory", rateLimitPublicRead, handlePublicHandleProductInventory);
 app.get("/api/public/v1/:handle/inventory", rateLimitPublicRead, handlePublicHandleInventory);

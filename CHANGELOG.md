@@ -1,12 +1,24 @@
 # Changelog
 
-## [0.0.2.5] - 2026-09-13
+## [0.1.0.1] - 2026-09-13
 
 ### Changed
 
 - Hide the Ready To Ship tab from Dashboard and Warehouse Detail.
 - Classify dispatched Steadfast orders into Processing, In-Transit, or Flagged while showing their consignment ID in Processing.
 
+## [0.1.0.0] - 2026-09-13
+
+### Added
+
+- Send an individual SMS to a saved order phone number from the order editor.
+- Open a one-click WhatsApp chat for an order directly from its customer panel.
+- Compose SMS messages with quick order-value inserts and a Unicode length limit.
+- Keep manual SMS requests authenticated, workspace-scoped, and connected to the existing Bulk SMS BD gateway.
+
+### Fixed
+
+- Apply the standard ৳100 delivery charge to public storefront orders below the free-delivery threshold when no shipping zone is selected.
 
 ## [0.0.2.4] - 2026-09-12
 

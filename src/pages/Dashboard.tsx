@@ -24,7 +24,6 @@ import {
   type AbandonedCheckoutConvertOverrides,
   type AbandonedCheckoutConvertStatus,
 } from "@/lib/abandonedCheckouts";
-import OrderCreatorModal from "@/components/OrderCreatorModal";
 import { toast, DarkToast } from "@/components/ui/sonner";
 import {
   Search, AlertTriangle,
@@ -463,7 +462,6 @@ export default function Dashboard() {
   const [abandonedError, setAbandonedError] = useState<string | null>(null);
   const [abandonedActionInFlightId, setAbandonedActionInFlightId] = useState<string | null>(null);
   const [autoSyncing, setAutoSyncing] = useState(false);
-  const [createOrderOpen, setCreateOrderOpen] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [selectedAbandonedIds, setSelectedAbandonedIds] = useState<Set<string>>(new Set());
   const [bulkAbandonedRunning, setBulkAbandonedRunning] = useState(false);
@@ -775,11 +773,16 @@ export default function Dashboard() {
     });
   };
 
-  const runAbandonedContacted = async (checkoutId: string): Promise<AbandonedCheckout> => {
+  // Both "contacted" and "open" keep the checkout in the active queue, so they
+  // share the same in-place cache update.
+  const runAbandonedActiveStatus = async (
+    checkoutId: string,
+    action: "contacted" | "open",
+  ): Promise<AbandonedCheckout> => {
     const res = await apiFetch(`/api/abandoned-checkouts/${checkoutId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "contacted" }),
+      body: JSON.stringify({ action }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.checkout) {
@@ -821,13 +824,16 @@ export default function Dashboard() {
     return data.checkout as AbandonedCheckout;
   };
 
-  const updateAbandonedCheckout = async (checkoutId: string, action: "contacted" | "dismissed") => {
+  const updateAbandonedCheckout = async (checkoutId: string, action: "contacted" | "dismissed" | "open") => {
     if (abandonedActionInFlightId) return;
     setAbandonedActionInFlightId(checkoutId);
     try {
       if (action === "contacted") {
-        await runAbandonedContacted(checkoutId);
+        await runAbandonedActiveStatus(checkoutId, "contacted");
         toast.success("Checkout marked as contacted");
+      } else if (action === "open") {
+        await runAbandonedActiveStatus(checkoutId, "open");
+        toast.success("Checkout marked as not contacted");
       } else {
         await runAbandonedDismissed(checkoutId);
         toast.success("Checkout dismissed");
@@ -895,7 +901,7 @@ export default function Dashboard() {
       for (const checkoutId of ids) {
         try {
           if (target === "contacted") {
-            await runAbandonedContacted(checkoutId);
+            await runAbandonedActiveStatus(checkoutId, "contacted");
           } else {
             await runAbandonedConvert(checkoutId, target as "pending" | "on_hold" | "approved", {});
           }
@@ -1431,7 +1437,7 @@ export default function Dashboard() {
             <PopButton
               color="yellow"
               size="sm"
-              onClick={() => setCreateOrderOpen(true)}
+              onClick={() => navigate("/orders/new", { state: { from: location.pathname } })}
               disabled={bulkUpdating || autoSyncing}
               className="gap-1.5 px-3 text-[11px] font-bold tracking-normal text-black max-md:w-full max-md:justify-center"
               data-testid="button-create-order"
@@ -1578,14 +1584,6 @@ export default function Dashboard() {
         )}
       </motion.div>
 
-      <OrderCreatorModal
-        open={createOrderOpen}
-        onOpenChange={setCreateOrderOpen}
-        onCreated={() => {
-          fetchOrders();
-          fetchAnalytics(dateRange);
-        }}
-      />
       <AlertDialog open={bulkDismissCount > 0} onOpenChange={(open) => { if (!open && !bulkAbandonedRunning) setBulkDismissCount(0); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
