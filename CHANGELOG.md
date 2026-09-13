@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2.5] - 2026-09-13
+
+### Changed
+
+- Hide the Ready To Ship tab from Dashboard and Warehouse Detail.
+- Classify dispatched Steadfast orders into Processing, In-Transit, or Flagged while showing their consignment ID in Processing.
+
+
 ## [0.0.2.4] - 2026-09-12
 
 ### Changed
