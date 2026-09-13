@@ -77,6 +77,7 @@ export type OrderStatusSegmentedControlProps = {
   value: FulfillmentQueueTab;
   onChange: (value: FulfillmentQueueTab) => void;
   loading?: boolean;
+  hiddenStatuses?: OrderStatusFilter[];
 };
 
 export function OrderStatusSegmentedControl({
@@ -85,6 +86,7 @@ export function OrderStatusSegmentedControl({
   value,
   onChange,
   loading = false,
+  hiddenStatuses = [],
 }: OrderStatusSegmentedControlProps) {
   return (
     <div
@@ -101,7 +103,7 @@ export function OrderStatusSegmentedControl({
         }}
         className="w-max min-w-full rounded-xl bg-black/[0.045] p-1 ring-1 ring-black/[0.025] xl:grid xl:w-full xl:grid-cols-12"
       >
-        {FULFILLMENT_QUEUE_TABS.map((status) => {
+        {FULFILLMENT_QUEUE_TABS.filter((status) => status === "abandoned" || !hiddenStatuses.includes(status)).map((status) => {
           const presentation = STATUS_PRESENTATION[status];
           const count = status === "abandoned" ? abandonedCount : counts[status];
           const formattedCount = count.toLocaleString("en-BD");

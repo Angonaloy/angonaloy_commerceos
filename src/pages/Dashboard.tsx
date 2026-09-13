@@ -156,6 +156,7 @@ interface Order {
   fulfillment_status: string | null;
   sent_to_courier?: boolean | null;
   courier_status?: string | null;
+  courier_name?: string | null;
   warehouse_id?: string | null;
   warehouse_auto?: boolean | null;
   weight_kg?: number | null;
@@ -1525,6 +1526,7 @@ export default function Dashboard() {
 
         <OrderStatusSegmentedControl
           counts={orderStatusCounts}
+          hiddenStatuses={["ready_to_ship"]}
           abandonedCount={abandonedActiveCount}
           value={fulfillmentTab}
           loading={isAbandonedQueue ? abandonedLoading : loading}

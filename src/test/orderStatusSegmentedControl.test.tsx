@@ -34,6 +34,13 @@ describe("OrderStatusSegmentedControl", () => {
     expect(radios[1]).toHaveAccessibleName(/^Abandoned:/);
   });
 
+  it("hides Ready To Ship when requested", () => {
+    render(<OrderStatusSegmentedControl counts={counts} hiddenStatuses={["ready_to_ship"]} value="all" onChange={vi.fn()} />);
+
+    expect(screen.queryByRole("radio", { name: /Ready To Ship/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(11);
+  });
+
   it("reports the selected status", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -369,6 +369,7 @@ export default function WarehouseDetail() {
           </div>
           <OrderStatusSegmentedControl
             counts={orderStatusCounts}
+            hiddenStatuses={["ready_to_ship"]}
             value={statusFilter}
             loading={orders.isLoading}
             onChange={(nextStatus) => {
