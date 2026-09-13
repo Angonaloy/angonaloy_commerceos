@@ -7859,7 +7859,9 @@ app.post("/api/webhooks/steadfast", async (req, res) => {
     const payload = req.body;
     const consignmentId = String(payload?.consignment_id || "");
     const status = payload?.status || payload?.delivery_status || "";
-    if (!consignmentId || !status) {
+    const trackingMessage = String(payload?.tracking_message || payload?.message || "").trim();
+    const effectiveStatus = String(status || trackingMessage).trim();
+    if (!consignmentId || !effectiveStatus) {
       return res.status(400).json({ error: "Missing consignment_id or status" });
     }
 
@@ -7888,12 +7890,15 @@ app.post("/api/webhooks/steadfast", async (req, res) => {
       }
     }
 
-    const normalizedStatus = status.toLowerCase();
-    if (normalizedStatus === (order.courier_status || "").toLowerCase()) {
+    const normalizedStatus = effectiveStatus.toLowerCase();
+    if (!trackingMessage && normalizedStatus === (order.courier_status || "").toLowerCase()) {
       return res.status(200).json({ ok: true, skipped: "status unchanged" });
     }
 
-    const patch = { courier_status: status };
+    const patch = {
+      courier_status: status || "in_transit",
+      ...(trackingMessage ? { courier_message: trackingMessage } : {}),
+    };
     if (normalizedStatus === "delivered" || normalizedStatus === "partial_delivered") {
       patch.status = "confirmed";
       patch.fulfillment_status = "delivered";
