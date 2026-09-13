@@ -19,6 +19,7 @@ export interface StatusFilterOrder {
   status?: string | null;
   fulfillment_status?: string | null;
   courier_status?: string | null;
+  courier_name?: string | null;
   sent_to_courier?: boolean | null;
   fraud_checked?: boolean | null;
   fraud_data?: {
@@ -47,6 +48,14 @@ const PROCESSING_STATES = new Set([
   "processing",
   "picked_up",
 ]);
+const STEADFAST_FLAGGED_STATES = new Set([
+  "unknown",
+  "unknown_approval_pending",
+  "cancelled_approval_pending",
+  "error",
+  "failed",
+  "stale",
+]);
 
 function normalizeStatus(value?: string | null) {
   return (value || "")
@@ -58,6 +67,27 @@ function normalizeStatus(value?: string | null) {
 
 function isCancelledState(value: string) {
   return CANCELLED_STATES.has(value) || value.includes("return");
+}
+
+function isSteadfastOrder(order: StatusFilterOrder) {
+  return order.courier_name === "steadfast" && order.sent_to_courier === true;
+}
+
+function isSteadfastTransitStatus(status: string) {
+  return TRANSIT_STATES.has(status) ||
+    status === "picked_up" ||
+    status.includes("warehouse") ||
+    status.includes("dispatch_id") ||
+    status.includes("sent_to_") ||
+    status.includes("received_at");
+}
+
+function isSteadfastProcessingStatus(status: string) {
+  return !status ||
+    PROCESSING_STATES.has(status) ||
+    status.includes("consignment_created") ||
+    status.includes("accepted") ||
+    status.includes("received_by_sender");
 }
 
 function isFraudFlagged(order: StatusFilterOrder) {
@@ -74,6 +104,17 @@ export function classifyOrderStatus(order: StatusFilterOrder): OperationalOrderS
 
   if ([business, fulfillment, courier].some(isCancelledState)) return "cancelled";
   if ([business, fulfillment, courier].some((value) => DELIVERED_STATES.has(value))) return "delivered";
+  if (isSteadfastOrder(order)) {
+    if (business === "flagged" || STEADFAST_FLAGGED_STATES.has(courier) || isFraudFlagged(order)) {
+      return "flagged";
+    }
+    if ([business, fulfillment, courier].some((value) => HOLD_STATES.has(value))) return "on_hold";
+    if (isSteadfastTransitStatus(courier)) return "in_transit";
+    if (business === "processing" || business === "print" || isSteadfastProcessingStatus(courier)) {
+      return "processing";
+    }
+  }
+
   if ([business, fulfillment, courier].some((value) => TRANSIT_STATES.has(value))) return "in_transit";
   if ([business, fulfillment, courier].some((value) => HOLD_STATES.has(value))) return "on_hold";
 
