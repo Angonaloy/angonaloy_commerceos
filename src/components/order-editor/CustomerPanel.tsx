@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, PencilSimple, X } from "@phosphor-icons/react";
+import { ArrowUpRight, Check, Copy, PencilSimple, X } from "@phosphor-icons/react";
 import { normalizeBusinessStatus } from "@/lib/orderTransitions";
 import { formatTaka } from "@/lib/orderEditor";
 import { bdWhatsAppHref } from "@/lib/bdPhone";
@@ -58,6 +58,26 @@ function DetailField({ label, value }: { label: string; value: string | number |
       <p className="mt-1 break-words text-[14px] text-black">{value || "—"}</p>
     </div>
   );
+}
+
+const LANDING_PAGE_PATH_RE = /^\/step\/([a-z0-9]+(?:-[a-z0-9]+)*)$/i;
+
+function formatLandingPageLabel(value: string | null | undefined): string {
+  const path = value?.trim();
+  if (!path) return "—";
+
+  const match = LANDING_PAGE_PATH_RE.exec(path);
+  if (!match) return path;
+
+  return match[1]
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function landingPageHref(value: string | null | undefined): string | undefined {
+  const path = value?.trim();
+  return path && LANDING_PAGE_PATH_RE.test(path) ? path : undefined;
 }
 
 function dateTime(value: string | null | undefined) {
@@ -175,6 +195,23 @@ export function CustomerPanel({ order, customer, disabled = false, history = [],
           )}
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-3">
+          <div data-testid="landing-page-attribution" className="flex min-w-0 items-center gap-2">
+            <p className="shrink-0 text-[8px] font-medium uppercase tracking-[0.3em] text-black/40">Landing page</p>
+            {landingPageHref(order.landing_page_path) ? (
+              <a
+                href={landingPageHref(order.landing_page_path)}
+                target="_blank"
+                rel="noreferrer"
+                title={order.landing_page_path?.trim()}
+                className="inline-flex min-w-0 items-center gap-1 truncate text-[12px] text-black/65 underline decoration-black/20 underline-offset-2 transition hover:text-black hover:decoration-black"
+              >
+                <span className="truncate">{formatLandingPageLabel(order.landing_page_path)}</span>
+                <ArrowUpRight weight="light" size={14} aria-hidden="true" />
+              </a>
+            ) : (
+              <span className="text-[12px] text-black/45">{formatLandingPageLabel(order.landing_page_path)}</span>
+            )}
+          </div>
           {source && onSourceChange && (
             <div data-testid="order-source-control" className="flex min-w-0 items-center gap-3">
               <p className="text-[8px] font-medium uppercase tracking-[0.3em] text-black/40">Order source</p>
@@ -241,10 +278,6 @@ export function CustomerPanel({ order, customer, disabled = false, history = [],
           <DetailField label="Delivery address" value={customer.address} />
         </div>
       )}
-
-      <div className="mt-4">
-        <DetailField label="Landing page" value={order.landing_page_path} />
-      </div>
 
       <div className="mt-4 min-w-0">
         <div className="flex items-center gap-2.5">

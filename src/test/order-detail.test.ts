@@ -153,12 +153,16 @@ describe("OrderDetail", () => {
     expect(within(customerSection).getByText("Last orders").parentElement?.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0);
   });
 
-  it("shows the originating landing page path", async () => {
+  it("shows a readable linked originating landing page in the header", async () => {
     renderPage();
 
     const customerSection = await screen.findByRole("region", { name: "Customer and order" });
-    expect(within(customerSection).getByText("Landing page")).toBeInTheDocument();
-    expect(within(customerSection).getByText("/step/katimon-mango")).toBeInTheDocument();
+    const attribution = within(customerSection).getByTestId("landing-page-attribution");
+    const landingPage = within(attribution).getByRole("link", { name: "Katimon Mango" });
+
+    expect(within(attribution).getByText("Landing page")).toBeInTheDocument();
+    expect(landingPage).toHaveAttribute("href", "/step/katimon-mango");
+    expect(landingPage).toHaveAttribute("title", "/step/katimon-mango");
   });
 
   it("keeps the landing page label visible when attribution is unavailable", async () => {
@@ -171,8 +175,9 @@ describe("OrderDetail", () => {
     renderPage();
 
     const customerSection = await screen.findByRole("region", { name: "Customer and order" });
-    const landingPageField = within(customerSection).getByText("Landing page").parentElement;
-    expect(landingPageField).toHaveTextContent("—");
+    const attribution = within(customerSection).getByTestId("landing-page-attribution");
+    expect(attribution).toHaveTextContent("Landing page");
+    expect(attribution).toHaveTextContent("—");
   });
 
   it("keeps landing page attribution visible while customer details are edited", async () => {
@@ -182,8 +187,8 @@ describe("OrderDetail", () => {
 
     await user.click(within(customerSection).getByRole("button", { name: "Edit customer" }));
 
-    expect(within(customerSection).getByText("Landing page")).toBeInTheDocument();
-    expect(within(customerSection).getByText("/step/katimon-mango")).toBeInTheDocument();
+    const attribution = within(customerSection).getByTestId("landing-page-attribution");
+    expect(within(attribution).getByRole("link", { name: "Katimon Mango" })).toBeInTheDocument();
   });
 
   it("shows and saves an order source independently", async () => {

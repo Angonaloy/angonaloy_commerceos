@@ -11,7 +11,7 @@ Make the originating landing page immediately discoverable in Order Editor witho
 - Derive a human-readable label from the stored normalized `/step/<slug>` path, for example `Katimon Mango`.
 - Link the human-readable label to the stored local path in a new tab, preserving the exact path as the link title and accessible description.
 - Keep the existing path visible as fallback context when a slug cannot be formatted.
-- Show no attribution block for orders without a stored landing-page path.
+- Always show the `Landing page` label; show `—` when no path is stored.
 - Do not add landing pages to the source dropdown or change New Order.
 
 ## Testing
