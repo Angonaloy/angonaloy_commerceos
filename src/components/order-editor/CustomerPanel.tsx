@@ -6,6 +6,8 @@ import { bdWhatsAppHref } from "@/lib/bdPhone";
 import WhatsappLogo from "@/components/WhatsappLogo";
 import SmsBubbleIcon from "@/components/SmsBubbleIcon";
 import { IndividualSmsDialog } from "@/components/order-editor/IndividualSmsDialog";
+import { OrderSourceSelect } from "@/components/order-editor/OrderSourceSelect";
+import type { OrderSource } from "@/lib/orderSource";
 
 export type CustomerDraft = {
   customerName: string;
@@ -34,6 +36,7 @@ type CustomerOrder = {
   fraud_data?: { risk_level?: string } | null;
   created_at?: string | null;
   updated_at?: string | null;
+  source?: string | null;
 };
 
 type CustomerPanelProps = {
@@ -43,6 +46,9 @@ type CustomerPanelProps = {
   history?: HistoryEntry[];
   historyLoading?: boolean;
   onApply: (customer: CustomerDraft) => void;
+  source?: OrderSource;
+  onSourceChange?: (source: OrderSource) => void;
+  sourceDisabled?: boolean;
 };
 
 function DetailField({ label, value }: { label: string; value: string | number | null | undefined }) {
@@ -115,7 +121,7 @@ async function copyTextToClipboard(value: string): Promise<boolean> {
   }
 }
 
-export function CustomerPanel({ order, customer, disabled = false, history = [], historyLoading = false, onApply }: CustomerPanelProps) {
+export function CustomerPanel({ order, customer, disabled = false, history = [], historyLoading = false, onApply, source, onSourceChange, sourceDisabled = false }: CustomerPanelProps) {
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState(customer);
   const [copied, setCopied] = useState(false);
@@ -223,6 +229,15 @@ export function CustomerPanel({ order, customer, disabled = false, history = [],
             </p>
           </div>
           <DetailField label="Delivery address" value={customer.address} />
+        </div>
+      )}
+
+      {source && onSourceChange && (
+        <div className="mt-4 max-w-xs">
+          <p className="text-[8px] font-medium uppercase tracking-[0.3em] text-black/40">Order source</p>
+          <div className="mt-2">
+            <OrderSourceSelect value={source} onChange={onSourceChange} disabled={sourceDisabled} />
+          </div>
         </div>
       )}
 

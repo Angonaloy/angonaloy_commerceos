@@ -740,6 +740,12 @@ function normalizeBusinessStatus(value) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+const ORDER_SOURCE_VALUES = new Set(["website", "facebook", "instagram", "whatsapp", "phone", "manual_other"]);
+
+function isCanonicalOrderSource(value) {
+  return typeof value === "string" && ORDER_SOURCE_VALUES.has(value.trim().toLowerCase());
+}
+
 function parseFraudShieldError(status, body) {
   let message = body;
   try {
@@ -6062,6 +6068,7 @@ app.post("/api/abandoned-checkouts/:id/convert", async (req, res) => {
         warehouse_auto: true,
         weight_kg: routing.weightKg,
         abandoned_checkout_id: draft.id,
+        source: "website",
       })
       .select("*")
       .single();
@@ -6672,7 +6679,7 @@ app.post("/api/custom-orders/webhook", async (req, res) => {
       "status",
       "notes",
     ];
-    const row = { org_id: orgId, source: "custom_store" };
+    const row = { org_id: orgId, source: "website" };
     for (const key of allowed) {
       if (req.body?.[key] !== undefined) row[key] = req.body[key];
     }
@@ -7169,11 +7176,17 @@ app.post("/api/orders", async (req, res) => {
       "payment_method",
       "discount",
       "advanced_payment",
+      "source",
     ];
     const row = { org_id: orgId };
     for (const key of allowed) {
       if (req.body?.[key] !== undefined) row[key] = req.body[key];
     }
+    if (req.body?.source !== undefined && !isCanonicalOrderSource(req.body.source)) {
+      return res.status(400).json({ error: "Invalid order source" });
+    }
+    if (row.source) row.source = row.source.trim().toLowerCase();
+    if (!row.source) row.source = "manual_other";
     if (!row.shopify_order_id) {
       row.shopify_order_id = -(Math.floor(Math.random() * 9_000_000_000_000) + 1_000_000_000_000);
     }
@@ -7223,9 +7236,13 @@ app.patch("/api/orders/:id", async (req, res) => {
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     const supabase = getServiceSupabase();
     const { orgId } = await getUserOrg(supabase, user.id);
-    const allowed = ["status", "notes", "courier_status", "consignment_id", "tracking_code", "courier_message", "sent_to_courier", "fraud_checked", "fraud_data", "price", "delivery_rate", "discount", "customer_name", "phone", "address", "warehouse_id", "weight_kg"];
+    const allowed = ["status", "notes", "courier_status", "consignment_id", "tracking_code", "courier_message", "sent_to_courier", "fraud_checked", "fraud_data", "price", "delivery_rate", "discount", "customer_name", "phone", "address", "warehouse_id", "weight_kg", "source"];
     const update = {};
     for (const k of allowed) { if (req.body[k] !== undefined) update[k] = req.body[k]; }
+    if (update.source !== undefined && !isCanonicalOrderSource(update.source)) {
+      return res.status(400).json({ error: "Invalid order source" });
+    }
+    if (update.source !== undefined) update.source = update.source.trim().toLowerCase();
     if (update.customer_name !== undefined && (typeof update.customer_name !== "string" || !update.customer_name.trim())) {
       return res.status(400).json({ error: "Customer name is required" });
     }
@@ -11147,7 +11164,7 @@ async function approveHeldProtectionReview(supabase, orgId, reviewId) {
       price: subtotal,
       delivery_rate: shipping,
       status: "pending",
-      source: "storefront_review",
+      source: "website",
       warehouse_id: routing.warehouseId,
       warehouse_auto: true,
       weight_kg: routing.weightKg,
@@ -11495,7 +11512,7 @@ async function handlePublicHandleOrderSubmit(req, res) {
       price: subtotal,
       delivery_rate: shipping,
       status: "pending",
-      source: "storefront",
+      source: "website",
       warehouse_id: routing.warehouseId,
       warehouse_auto: true,
       weight_kg: routing.weightKg,

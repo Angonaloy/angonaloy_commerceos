@@ -33,8 +33,44 @@ describe("NewOrder", () => {
     expect(screen.getByRole("region", { name: "Product catalog" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Order cart" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create order/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Order source")).toHaveTextContent("Manual / Other");
     expect(screen.getByText("Run fraud check")).toBeInTheDocument();
     await waitFor(() => expect(apiFetch).toHaveBeenCalledWith("/api/products"));
+  });
+
+  it("submits the selected order source", async () => {
+    const user = userEvent.setup();
+    apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/products") {
+        return { ok: true, json: async () => ({ products: [{ id: "honey", name: "Sundarbans Honey", selling_price: 850, variants: [], images: [] }] }) };
+      }
+      if (url === "/api/orders" && init?.method === "POST") {
+        return { ok: true, json: async () => ({ order: { id: "order-1" } }) };
+      }
+      throw new Error(`Unexpected API request: ${url}`);
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/orders/new"]}>
+          <NewOrder />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByLabelText("Order source"));
+    await user.click(await screen.findByRole("option", { name: "Phone" }));
+    await user.type(screen.getByRole("textbox", { name: "Customer name" }), "Rahim Uddin");
+    await user.type(screen.getByRole("textbox", { name: "Phone" }), "01712345678");
+    await user.type(screen.getByRole("textbox", { name: "Delivery address" }), "Dhanmondi, Dhaka");
+    await user.click(await screen.findByRole("button", { name: "Add Sundarbans Honey to cart" }));
+    await user.click(screen.getByRole("button", { name: /create order/i }));
+
+    await waitFor(() => {
+      const call = apiFetch.mock.calls.find(([requestUrl, requestInit]) => requestUrl === "/api/orders" && requestInit?.method === "POST");
+      expect(call).toBeDefined();
+      expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ source: "phone" });
+    });
   });
 
   it("adds a catalog product into the cart without opening a picker", async () => {

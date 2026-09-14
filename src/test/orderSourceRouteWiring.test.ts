@@ -5,8 +5,7 @@ import { detectCustomerOrderSource } from "../../server/customers.js";
 
 const serverSource = readFileSync(resolve(process.cwd(), "server/index.js"), "utf8");
 
-// TODO: Fix these tests after order source validation is fully implemented in server/index.js
-describe.skip("order source route wiring", () => {
+describe("order source route wiring", () => {
   it("validates and defaults source on main order writes", () => {
     const createStart = serverSource.indexOf('app.post("/api/orders"');
     const patchStart = serverSource.indexOf('app.patch("/api/orders/:id"');
@@ -15,8 +14,10 @@ describe.skip("order source route wiring", () => {
     const patchRoute = serverSource.slice(patchStart, patchEnd);
     expect(serverSource).toContain('new Set(["website", "facebook", "instagram", "whatsapp", "phone", "manual_other"])');
     expect(createRoute).toContain('isCanonicalOrderSource(req.body.source)');
+    expect(createRoute).toContain('return res.status(400).json({ error: "Invalid order source" });');
     expect(createRoute).toContain('row.source = "manual_other"');
     expect(patchRoute).toContain("isCanonicalOrderSource(update.source)");
+    expect(patchRoute).toContain('return res.status(400).json({ error: "Invalid order source" });');
     expect(createRoute).toContain('"source"');
     expect(patchRoute).toContain('"source"');
   });
@@ -26,7 +27,7 @@ describe.skip("order source route wiring", () => {
   });
 });
 
-describe.skip("canonical order sources in customer analytics", () => {
+describe("canonical order sources in customer analytics", () => {
   it("maps canonical values without changing customer source vocabulary", () => {
     expect(detectCustomerOrderSource({ source: "website" }, "order")).toBe("custom_website");
     expect(detectCustomerOrderSource({ source: "phone" }, "order")).toBe("manual");
