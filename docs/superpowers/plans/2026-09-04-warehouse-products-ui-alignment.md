@@ -12,7 +12,7 @@
 
 - Products is the primary visual reference; Customers supplies overlay patterns and Inbox Orders supplies dense operational feedback.
 - Use `apiFetch()` for every authenticated request.
-- Keep the fixed Mango Lover BD workspace guard server-side; never send or accept an organization identifier in these UI flows.
+- Keep the fixed Angonaloy workspace guard server-side; never send or accept an organization identifier in these UI flows.
 - Use Phosphor icons with `weight="light"`.
 - Use the existing system font, tokens, controls, and `#FAFAF8`; add no fonts, shadows, or design tokens.
 - Respect `useReducedMotion` and preserve keyboard and narrow-screen access.

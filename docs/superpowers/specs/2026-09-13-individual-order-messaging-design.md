@@ -62,7 +62,7 @@ Request body:
 The route must:
 
 1. Extract and validate the Supabase JWT with the existing auth helpers.
-2. Resolve the current Mango Lover BD `org_id` from the authenticated user's role.
+2. Resolve the current Angonaloy `org_id` from the authenticated user's role.
 3. Load the order by `id` and `org_id`; never accept a client-supplied recipient phone or organization id.
 4. Validate the message as a non-empty string of at most 1,000 Unicode code points before contacting the gateway.
 5. Normalize the saved order phone with `normalizeBdPhone()` and reject invalid numbers.
@@ -112,7 +112,7 @@ Add coverage for:
 - SMS modal opening, quick-insert behavior, empty-message validation, loading state, successful submission, and retryable failure.
 - Exact request payload propagation to the order-scoped SMS endpoint.
 - WhatsApp URL generation for common Bangladesh phone formats and rejection of invalid numbers.
-- Backend authentication and Mango Lover BD workspace scoping.
+- Backend authentication and Angonaloy workspace scoping.
 - Backend use of the stored order phone rather than a client-supplied recipient.
 - Bulk SMS disabled/misconfigured, invalid-phone, gateway-rejection, and accepted-submission responses.
 - Regression proof that manual SMS does not invoke automated confirmation or dispatch behavior.

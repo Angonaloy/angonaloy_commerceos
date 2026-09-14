@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-28
 **Status:** Approved, ready for implementation planning
-**Deployment:** Mango Lover BD (single-tenant)
+**Deployment:** Angonaloy (single-tenant)
 
 ## Context
 
@@ -73,7 +73,7 @@ New table `public.warehouses`:
 | Column | Type | Notes |
 |---|---|---|
 | `id` | uuid pk | |
-| `org_id` | uuid not null | fixed Mango Lover BD workspace guard |
+| `org_id` | uuid not null | fixed Angonaloy workspace guard |
 | `name` | text not null | |
 | `address` | text | |
 | `contact_person` | text | |

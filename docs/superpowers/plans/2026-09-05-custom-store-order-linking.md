@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Preserve all existing uncommitted three-column editor work.
-- Every catalog, order, variant, and order-item query must retain the resolved Mango Lover BD `org_id` guard.
+- Every catalog, order, variant, and order-item query must retain the resolved Angonaloy `org_id` guard.
 - Prices and stock changes remain server-authoritative.
 - Inventory and item creation for matched future orders must use `replace_order_items`.
 - Do not apply a migration remotely.

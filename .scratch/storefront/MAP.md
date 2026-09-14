@@ -15,7 +15,7 @@ Build a multi-merchant storefront for Merchant-Suite. Each merchant gets a handl
 ## Notes
 
 - **Domain:** `merchant-suite.online` (not subdomain-based — handle-based path routing)
-- **Dedicated storefront repo:** `github.com/mangoloverbd/mangoloverbd_storefront` (originally forked from `github.com/noorkarimmehedi/e-commerce`) — React + Vite storefront with cart, checkout, Meta Pixel/CAPI. Currently single-tenant for Mango Lover BD.
+- **Dedicated storefront repo:** `github.com/Angonaloy/angonaloy_storefront` (originally forked from `github.com/noorkarimmehedi/e-commerce`) — React + Vite storefront with cart, checkout, Meta Pixel/CAPI. Currently single-tenant for Angonaloy.
 - **Backend:** Express.js (ESM) in `server/index.js`. Supabase PostgreSQL. Service role client bypasses RLS.
 - **Multi-tenancy:** Every query scoped by `org_id`. Storefront resolves merchant from handle → `org_id` via `app_settings` forward mapping.
 - **Image pipeline:** Planned — `sharp` → WebP + thumbnails → Supabase Storage `product-images` bucket.

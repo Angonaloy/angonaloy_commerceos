@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Every order query must resolve the fixed Mango Lover BD workspace and retain the `org_id` guard.
+- Every order query must resolve the fixed Angonaloy workspace and retain the `org_id` guard.
 - Every new API route must validate the authenticated user before reading or mutating order data.
 - Client API requests must use `apiFetch()`.
 - Totals and inventory deltas must be calculated server-side inside one database transaction.

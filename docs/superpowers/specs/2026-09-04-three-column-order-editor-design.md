@@ -77,7 +77,7 @@ All fields reject negative values. `unit_discount` cannot exceed `unit_price`. E
 
 ## API and Transaction Flow
 
-`GET /api/orders/:id` continues to authenticate the user, resolve the fixed Mango Lover BD workspace, and return only the matching order and order items. It also returns the new item discount fields. Catalog enrichment supplies display image, slug identifier, product/variant weight, and current stock without allowing the client to choose an organization.
+`GET /api/orders/:id` continues to authenticate the user, resolve the fixed Angonaloy workspace, and return only the matching order and order items. It also returns the new item discount fields. Catalog enrichment supplies display image, slug identifier, product/variant weight, and current stock without allowing the client to choose an organization.
 
 `PATCH /api/orders/:id/items` accepts product ID, optional variant ID, quantity, discount type, and discount value for each line. It validates the request shape and UUIDs before invoking the transactional database operation. Client-supplied unit prices, unit discounts, totals, stock, product names, and workspace IDs are ignored.
 

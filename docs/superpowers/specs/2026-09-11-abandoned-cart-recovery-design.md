@@ -2,7 +2,7 @@
 
 ## Goal
 
-Give Mango Lover BD staff a durable, manual-only queue of shoppers who enter a valid Bangladeshi phone number during checkout but do not complete an order. The queue appears as an **Abandoned Carts** tab immediately after **All Orders** in Merchant Suite's fulfillment area.
+Give Angonaloy staff a durable, manual-only queue of shoppers who enter a valid Bangladeshi phone number during checkout but do not complete an order. The queue appears as an **Abandoned Carts** tab immediately after **All Orders** in Merchant Suite's fulfillment area.
 
 The feature covers the main storefront cart checkout and these campaign landing pages:
 
@@ -21,7 +21,7 @@ An abandoned checkout is not an order. It never changes inventory, revenue, fulf
 3. After the valid-phone threshold, a shared storefront helper debounces capture updates and also saves on field blur. It retries a failed capture after the next form/cart interaction, browser focus, or return to the network.
 4. The main storefront sends its current cart items. Each campaign page sends its selected pack, quantity, price and delivery snapshot. All surfaces also send the current optional name and address, source identifier, and a whitelisted set of campaign parameters.
 5. The browser posts only to a same-origin storefront endpoint. A Vercel serverless handler in production and the equivalent local Express route validate the request, then call Merchant Suite with the existing server-only `CUSTOM_ORDERS_API_KEY`.
-6. Merchant Suite resolves the fixed Mango Lover BD workspace from that API key and upserts the draft under its resolved `org_id`. The browser never receives an API key and never supplies an organization identifier.
+6. Merchant Suite resolves the fixed Angonaloy workspace from that API key and upserts the draft under its resolved `org_id`. The browser never receives an API key and never supplies an organization identifier.
 7. A successful existing `/api/orders` request includes the optional draft key through the same secret-backed path. After the real order, order items, and inventory operation succeed, Merchant Suite marks the linked draft as recovered and removes it from the active queue.
 8. A missing, invalid, stale, or already-resolved draft key never prevents a valid order from being placed. Recovery-link failures are retried by reconciliation; they must not turn an already-persisted order into an apparent checkout failure.
 
@@ -34,7 +34,7 @@ Merchant Suite owns a new `public.abandoned_checkouts` table. It is not represen
 | Field | Purpose |
 | --- | --- |
 | `id` | Server-generated UUID primary key. |
-| `org_id` | Required fixed Mango Lover BD workspace guard. |
+| `org_id` | Required fixed Angonaloy workspace guard. |
 | `draft_key` | Browser-generated opaque UUID; unique with `org_id` for idempotent capture. |
 | `status` | `open`, `contacted`, `dismissed`, `recovered`, or `expired`. |
 | `customer_name`, `phone`, `address` | Latest captured partial checkout data; nullable except that a new draft has a validated phone. |
@@ -70,7 +70,7 @@ Merchant Suite exposes these authenticated dashboard routes:
 - an internal custom-store upsert route used only by the storefront server;
 - existing custom-order submission wiring extended with an optional draft key for recovery.
 
-Dashboard routes use `getToken(req)`, `getUser(token)`, and the resolved Mango Lover BD `org_id`. They never trust a route parameter or browser field as a workspace identifier.
+Dashboard routes use `getToken(req)`, `getUser(token)`, and the resolved Angonaloy `org_id`. They never trust a route parameter or browser field as a workspace identifier.
 
 ### Dashboard queue
 

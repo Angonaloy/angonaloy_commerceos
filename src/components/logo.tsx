@@ -4,7 +4,7 @@ export function Logo({ className }: { className?: string }) {
     return (
         <img
             src="/favicon.svg"
-            alt="Mango Lover BD Suite"
+            alt="Angonaloy Suite"
             className={cn("shrink-0 mix-blend-multiply brightness-0", className)}
         />
     );

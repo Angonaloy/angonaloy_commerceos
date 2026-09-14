@@ -13,7 +13,7 @@
 - Keep landing-page orders under the canonical `website` order source.
 - Accept only normalized local paths matching `/step/<slug>`; never persist an arbitrary external URL.
 - Preserve orders created from the homepage, product pages, manual creation, social channels, and legacy clients when the field is absent.
-- Keep all Merchant Suite database access workspace-scoped with the resolved Mango Lover BD `org_id`.
+- Keep all Merchant Suite database access workspace-scoped with the resolved Angonaloy `org_id`.
 - Do not expose service-role credentials or add direct storefront writes to Supabase.
 - Do not add landing pages as Order source dropdown options.
 
@@ -22,8 +22,8 @@
 ### Task 1: Define and test landing-path normalization
 
 **Files:**
-- Create: `../mangoloverbd_storefront/client/src/lib/landing-page-attribution.ts`
-- Test: `../mangoloverbd_storefront/client/src/lib/landing-page-attribution.test.ts`
+- Create: `../angonaloy_storefront/client/src/lib/landing-page-attribution.ts`
+- Test: `../angonaloy_storefront/client/src/lib/landing-page-attribution.test.ts`
 
 **Interfaces:**
 - Produces `normalizeLandingPagePath(pathname: string): string | undefined` and `currentLandingPagePath(): string | undefined`.
@@ -37,13 +37,13 @@
 ### Task 2: Thread attribution through storefront checkout
 
 **Files:**
-- Modify: `../mangoloverbd_storefront/api/orders.ts`
-- Modify: `../mangoloverbd_storefront/server/order-service.ts`
-- Modify: `../mangoloverbd_storefront/client/src/features/kalojira-mixed/kalojira-checkout.tsx`
-- Modify: `../mangoloverbd_storefront/client/src/features/sundarbans-honey/honey-checkout.tsx`
-- Modify: `../mangoloverbd_storefront/client/src/features/honey-nut/honey-nut-checkout.tsx`
-- Test: `../mangoloverbd_storefront/api/orders.test.ts`
-- Test: `../mangoloverbd_storefront/server/order-service.test.ts`
+- Modify: `../angonaloy_storefront/api/orders.ts`
+- Modify: `../angonaloy_storefront/server/order-service.ts`
+- Modify: `../angonaloy_storefront/client/src/features/kalojira-mixed/kalojira-checkout.tsx`
+- Modify: `../angonaloy_storefront/client/src/features/sundarbans-honey/honey-checkout.tsx`
+- Modify: `../angonaloy_storefront/client/src/features/honey-nut/honey-nut-checkout.tsx`
+- Test: `../angonaloy_storefront/api/orders.test.ts`
+- Test: `../angonaloy_storefront/server/order-service.test.ts`
 
 **Interfaces:**
 - `OrderRequest.landingPagePath?: string` is optional and normalized by the storefront API validator.
@@ -91,7 +91,7 @@
 
 ### Task 5: Full verification
 
-- [ ] Run storefront tests and build from `../mangoloverbd_storefront`.
+- [ ] Run storefront tests and build from `../angonaloy_storefront`.
 - [ ] Run Merchant Suite tests, lint, build, and `git diff --check`.
 - [ ] Confirm `src/pages/NewOrder.tsx` and the source option list are unchanged.
 - [ ] Commit each repository’s implementation with imperative feature commits.

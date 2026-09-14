@@ -1,11 +1,11 @@
 # Server-Side Storefront Order Protection Design
 
 **Date:** 2026-09-12
-**Repositories:** `mangoloverbd/mangoloverbd_commerceos` and `mangoloverbd/mangoloverbd_storefront`
+**Repositories:** `mangoloverbd/mangoloverbd_commerceos` and `Angonaloy/angonaloy_storefront`
 
 ## Goal
 
-Reduce fake-order harassment without blocking normal Mango Lover BD customers, especially customers using Bangla or Banglish addresses.
+Reduce fake-order harassment without blocking normal Angonaloy customers, especially customers using Bangla or Banglish addresses.
 
 The server remains authoritative. A rejected or held submission must not silently create a normal order, reduce inventory, send confirmation SMS, or trigger courier work.
 
@@ -112,7 +112,7 @@ type ProtectionInput = {
 };
 ```
 
-The server validates length, format, and time bounds. `clientSessionId` is only a secondary signal; it is never treated as proof of identity. The server derives its own IP/network signal and applies the Mango Lover BD workspace guard.
+The server validates length, format, and time bounds. `clientSessionId` is only a secondary signal; it is never treated as proof of identity. The server derives its own IP/network signal and applies the Angonaloy workspace guard.
 
 ## Order decision flow
 

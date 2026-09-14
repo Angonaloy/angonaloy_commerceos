@@ -104,7 +104,7 @@ describe("storefront SEO refresh wiring", () => {
       { path: "/api/internal/storefront-seo-refresh", schedule: "0 3 * * *" },
       { path: "/api/internal/abandoned-checkouts-maintenance", schedule: "15 3 * * *" },
     ]);
-    expect(envExample).toContain("STOREFRONT_GIT_REPO=mangoloverbd/mangoloverbd_storefront");
+    expect(envExample).toContain("STOREFRONT_GIT_REPO=Angonaloy/angonaloy_storefront");
     expect(envExample).toContain("VERCEL_PROJECT_ID=");
     expect(envExample).toContain("CRON_SECRET=");
   });

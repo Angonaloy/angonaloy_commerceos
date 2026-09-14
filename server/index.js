@@ -2571,7 +2571,7 @@ async function purgeStorefrontConfigCache(orgId) {
 
 const VERCEL_ACCESS_TOKEN = process.env.VERCEL_ACCESS_TOKEN || "";
 const STOREFRONT_VERCEL_TEAM_ID = process.env.STOREFRONT_VERCEL_TEAM_ID || "";
-const STOREFRONT_GIT_REPO = process.env.STOREFRONT_GIT_REPO || ""; // e.g. "mangoloverbd/mangoloverbd_storefront"
+const STOREFRONT_GIT_REPO = process.env.STOREFRONT_GIT_REPO || ""; // e.g. "Angonaloy/angonaloy_storefront"
 // The public URL of THIS Merchant Suite deploy, baked into every auto-provisioned
 // storefront so it reads catalog + posts orders back here.
 const MERCHANT_SUITE_PUBLIC_URL = (process.env.MERCHANT_SUITE_PUBLIC_URL || process.env.PUBLIC_DOMAIN || "").replace(/\/$/, "");
@@ -3034,7 +3034,7 @@ async function syncStorefrontDomain(projectId, prevDomain, newDomain) {
 // env vars, trigger a production deploy, and persist the project id for this merchant.
 async function provisionStorefrontProject(orgId, customOrdersApiKey) {
   if (!VERCEL_ACCESS_TOKEN) return { ok: false, error: "VERCEL_ACCESS_TOKEN not set" };
-  if (!STOREFRONT_GIT_REPO) return { ok: false, error: "STOREFRONT_GIT_REPO not set (e.g. mangoloverbd/mangoloverbd_storefront)" };
+  if (!STOREFRONT_GIT_REPO) return { ok: false, error: "STOREFRONT_GIT_REPO not set (e.g. Angonaloy/angonaloy_storefront)" };
   if (!MERCHANT_SUITE_PUBLIC_URL) return { ok: false, error: "MERCHANT_SUITE_PUBLIC_URL not set — the public URL of this Merchant Suite deploy" };
 
   const projectName = `storefront-${orgId.slice(0, 8)}`;

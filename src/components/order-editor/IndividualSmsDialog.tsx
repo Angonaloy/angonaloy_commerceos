@@ -35,7 +35,7 @@ const SMS_TEMPLATES = [
   {
     id: "please-receive",
     label: "Please receive",
-    message: "Dear {{customer_name}}, your Mango Lover BD order {{order_number}} is ready for delivery. Please receive the product and pay {{total}} upon delivery. Thank you.",
+    message: "Dear {{customer_name}}, your Angonaloy order {{order_number}} is ready for delivery. Please receive the product and pay {{total}} upon delivery. Thank you.",
   },
   {
     id: "courier-unreachable",
@@ -65,12 +65,12 @@ const SMS_TEMPLATES = [
   {
     id: "feedback-request",
     label: "Feedback",
-    message: "আপনার অর্ডার {{order_number}} কেমন লেগেছে? আপনার মতামত আমাদের জন্য গুরুত্বপূর্ণ। ধন্যবাদ Mango Lover BD-এর সাথে থাকার জন্য।",
+    message: "আপনার অর্ডার {{order_number}} কেমন লেগেছে? আপনার মতামত আমাদের জন্য গুরুত্বপূর্ণ। ধন্যবাদ Angonaloy-এর সাথে থাকার জন্য।",
   },
   {
     id: "repeat-purchase",
     label: "Repeat purchase",
-    message: "আবার আমের স্বাদ নিতে চাইলে Mango Lover BD-তে অর্ডার করুন। আপনার পছন্দের পণ্য আবার প্রস্তুত আছে।",
+    message: "আবার আমের স্বাদ নিতে চাইলে Angonaloy-তে অর্ডার করুন। আপনার পছন্দের পণ্য আবার প্রস্তুত আছে।",
   },
   {
     id: "delay-apology",
@@ -80,7 +80,7 @@ const SMS_TEMPLATES = [
   {
     id: "cancellation",
     label: "Cancellation",
-    message: "আপনার অর্ডার {{order_number}} বাতিল করা হয়েছে। ভবিষ্যতে প্রয়োজন হলে Mango Lover BD-তে আবার অর্ডার করতে পারেন।",
+    message: "আপনার অর্ডার {{order_number}} বাতিল করা হয়েছে। ভবিষ্যতে প্রয়োজন হলে Angonaloy-তে আবার অর্ডার করতে পারেন।",
   },
 ] as const;
 

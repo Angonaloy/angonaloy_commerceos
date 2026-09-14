@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give every newly created internal Mango Lover BD order one unique canonical number in the `ML-150000`, `ML-150001`, ... sequence across Merchant Suite, storefront checkout, and landing-page checkout.
+**Goal:** Give every newly created internal Angonaloy order one unique canonical number in the `ML-150000`, `ML-150001`, ... sequence across Merchant Suite, storefront checkout, and landing-page checkout.
 
 **Architecture:** Merchant Suite owns one Postgres sequence and a service-role-only RPC that returns the formatted order number. All three order creation paths call one server helper, ignore caller-supplied order numbers, and persist the RPC result. Existing rows and Shopify-import behavior remain unchanged; the storefront continues to display the canonical response from Merchant Suite.
 
@@ -10,12 +10,12 @@
 
 ## Global Constraints
 
-- All newly created Mango Lover BD orders use one canonical human-readable number sequence: `ML-150000`, `ML-150001`, and onward.
+- All newly created Angonaloy orders use one canonical human-readable number sequence: `ML-150000`, `ML-150001`, and onward.
 - Existing order numbers remain unchanged.
 - The sequence applies to Merchant Suite manual orders, public storefront orders, and landing-page webhook orders.
 - Shopify import behavior remains unchanged.
 - Public clients never receive database access or the ability to choose an order number.
-- Every user-data query and insert keeps the resolved Mango Lover BD `org_id` guard.
+- Every user-data query and insert keeps the resolved Angonaloy `org_id` guard.
 - Sequence gaps are acceptable when allocation succeeds but a later insert fails; uniqueness and increasing allocation matter more than gapless numbering.
 - Frontend code must use the existing storefront request helpers; no new direct database access or secret exposure.
 
@@ -178,10 +178,10 @@ git commit -m "feat: use canonical order numbers across creation paths"
 ## Task 3: Require storefront confirmation from Merchant Suite
 
 **Files:**
-- Modify: `/Users/noorkarimmehedi/conductor/repos/mangoloverbd_storefront/api/orders.ts:172-225`
-- Modify: `/Users/noorkarimmehedi/conductor/repos/mangoloverbd_storefront/server/order-service.ts:38-112`
-- Modify: `/Users/noorkarimmehedi/conductor/repos/mangoloverbd_storefront/api/orders.test.ts`
-- Modify: `/Users/noorkarimmehedi/conductor/repos/mangoloverbd_storefront/server/order-service.test.ts`
+- Modify: `/Users/noorkarimmehedi/conductor/repos/angonaloy_storefront/api/orders.ts:172-225`
+- Modify: `/Users/noorkarimmehedi/conductor/repos/angonaloy_storefront/server/order-service.ts:38-112`
+- Modify: `/Users/noorkarimmehedi/conductor/repos/angonaloy_storefront/api/orders.test.ts`
+- Modify: `/Users/noorkarimmehedi/conductor/repos/angonaloy_storefront/server/order-service.test.ts`
 
 **Interfaces:**
 - Consumes Merchant Suite response `{ order_id: "ML-150000" }`.
@@ -220,7 +220,7 @@ Run `node --test api/orders.test.ts server/order-service.test.ts`. Expected resu
 - [ ] **Step 6: Commit storefront changes without the pre-existing log**
 
 ```bash
-cd /Users/noorkarimmehedi/conductor/repos/mangoloverbd_storefront
+cd /Users/noorkarimmehedi/conductor/repos/angonaloy_storefront
 git add api/orders.ts api/orders.test.ts server/order-service.ts server/order-service.test.ts
 git commit -m "fix: require canonical order confirmation"
 ```
@@ -276,7 +276,7 @@ npm run build
 - [ ] **Step 5: Run storefront checks**
 
 ```bash
-cd /Users/noorkarimmehedi/conductor/repos/mangoloverbd_storefront
+cd /Users/noorkarimmehedi/conductor/repos/angonaloy_storefront
 npm run check
 node --test api/orders.test.ts server/order-service.test.ts
 npm run build

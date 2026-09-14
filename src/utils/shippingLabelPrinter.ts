@@ -151,7 +151,7 @@ function labelSection(order: ShippingLabelOrder, cn: string, businessName: strin
 
 export function buildShippingLabelHtml(
   orders: ShippingLabelOrder[],
-  businessName = "Mango Lover BD",
+  businessName = "Angonaloy",
 ): ShippingLabelHtmlResult {
   const missingOrderNumbers = orders
     .filter((order) => !getShippingLabelCn(order))

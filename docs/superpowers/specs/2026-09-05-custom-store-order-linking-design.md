@@ -4,7 +4,7 @@
 
 ## Approved behavior
 
-- Resolve product text only against products in the fixed Mango Lover BD workspace.
+- Resolve product text only against products in the fixed Angonaloy workspace.
 - Accept a product only when the most-specific textual match is unique.
 - For products with variants, accept the catalog link only when the variant is unique or its attribute values uniquely match the incoming text.
 - Preserve unmatched or ambiguous orders as detached legacy lines instead of linking the wrong inventory row.

@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Use `apiFetch()` from `src/lib/api.ts` for every authenticated request.
-- Keep the fixed Mango Lover BD workspace guard server-side; never send or accept an organization identifier in these UI flows.
+- Keep the fixed Angonaloy workspace guard server-side; never send or accept an organization identifier in these UI flows.
 - Use Phosphor icons with `weight="light"`.
 - Use the existing system font, tokens, controls, and `#FAFAF8`; add no fonts, shadows, or design tokens.
 - Respect `useReducedMotion` and preserve keyboard and narrow-screen access.

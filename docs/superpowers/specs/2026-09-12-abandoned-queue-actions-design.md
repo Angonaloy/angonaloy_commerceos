@@ -2,7 +2,7 @@
 
 ## Goal
 
-Give Mango Lover BD staff full working power inside the dashboard Abandoned tab:
+Give Angonaloy staff full working power inside the dashboard Abandoned tab:
 per-field copy buttons for phone and address, full draft editing like the pending
 order editor, and one-click conversion of a draft into a real order in Pending,
 On Hold, or Approved status.

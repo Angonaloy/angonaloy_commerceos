@@ -4,7 +4,7 @@
 
 ## Goal
 
-All newly created Mango Lover BD orders use one canonical human-readable number sequence:
+All newly created Angonaloy orders use one canonical human-readable number sequence:
 `ML-150000`, `ML-150001`, and onward. Existing order numbers remain unchanged.
 
 The sequence applies to orders created through:
@@ -13,7 +13,7 @@ The sequence applies to orders created through:
 - The public storefront checkout.
 - The landing-page checkout webhook.
 
-Shopify import behavior is left unchanged. Mango Lover BD does not currently use Shopify.
+Shopify import behavior is left unchanged. Angonaloy does not currently use Shopify.
 
 ## Current state
 
@@ -107,7 +107,7 @@ does not create a misleading non-persisted `#<random>` reference.
 ## Rollout
 
 1. Commit the migration and server changes in Merchant Suite.
-2. Apply the migration to the Mango Lover BD Supabase project after reviewing its SQL and advisors.
+2. Apply the migration to the Angonaloy Supabase project after reviewing its SQL and advisors.
 3. Deploy Merchant Suite.
 4. Deploy the storefront after confirming the shared API contract.
 5. Place one test order through a landing page and one through the storefront, then verify both

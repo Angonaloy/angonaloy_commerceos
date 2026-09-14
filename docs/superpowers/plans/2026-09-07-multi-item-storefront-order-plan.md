@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Preserve the fixed Mango Lover BD `org_id` guard on every database operation.
+- Preserve the fixed Angonaloy `org_id` guard on every database operation.
 - Do not accept an arbitrary organization identifier from storefront input.
 - Keep server-authoritative pricing and inventory mutation in `replace_order_items`.
 - Do not link ambiguous or unmatched legacy product text to catalog inventory.

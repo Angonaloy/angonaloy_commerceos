@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Every new route starts with `getToken(req)` → `getUser(token)` → `if (!user) return 401`, then resolves the Mango Lover BD workspace via `getUserOrg(supabase, user.id)` and filters every query by that `org_id`. Never accept an org id from the client.
+- Every new route starts with `getToken(req)` → `getUser(token)` → `if (!user) return 401`, then resolves the Angonaloy workspace via `getUserOrg(supabase, user.id)` and filters every query by that `org_id`. Never accept an org id from the client.
 - Frontend API calls use `apiFetch()` from `@/lib/api` only, never raw `fetch()`.
 - Icons use `@phosphor-icons/react` with `weight="light"`.
 - Taka amounts render with `৳`, never "BDT" or "Tk".
