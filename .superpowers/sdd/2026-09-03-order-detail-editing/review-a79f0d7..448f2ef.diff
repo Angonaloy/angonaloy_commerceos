@@ -1,0 +1,586 @@
+# Review package: a79f0d7..HEAD
+
+## Commits
+448f2ef fix: make order item edits transactional
+
+## Files changed
+ server/index.js                                    |  12 +-
+ src/test/order-items.test.ts                       | 147 +++++++++++++-
+ .../20260903000100_add_order_item_edit_rpc.sql     | 226 +++++++++++++++++++++
+ 3 files changed, 382 insertions(+), 3 deletions(-)
+
+## Diff
+diff --git a/server/index.js b/server/index.js
+index ac93849..27bc598 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -5281,20 +5281,22 @@ app.get("/api/orders/recent-notifications", async (req, res) => {
+ 
+ function isOrderDispatched(order) {
+   return Boolean(
+     order.sent_to_courier ||
+     order.consignment_id ||
+     order.tracking_code ||
+     order.courier_status,
+   );
+ }
+ 
++const ORDER_ITEM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
++
+ app.get("/api/orders/:id", async (req, res) => {
+   try {
+     const { user } = await getUser(getToken(req));
+     if (!user) return res.status(401).json({ error: "Unauthorized" });
+ 
+     const supabase = getServiceSupabase();
+     const { orgId } = await getUserOrg(supabase, user.id);
+     const { data: order, error: orderError } = await supabase
+       .from("orders")
+       .select("*")
+@@ -5336,20 +5338,24 @@ app.patch("/api/orders/:id/items", async (req, res) => {
+       }
+       const productId = item.productId || null;
+       const variantId = item.variantId || null;
+       const quantity = item.quantity;
+       if (!productId && !variantId) {
+         return res.status(400).json({ error: "Each item requires a productId or variantId" });
+       }
+       if (!Number.isInteger(quantity) || quantity < 1) {
+         return res.status(400).json({ error: "Item quantity must be a positive integer" });
+       }
++      if ((productId && (typeof productId !== "string" || !ORDER_ITEM_UUID_RE.test(productId))) ||
++          (variantId && (typeof variantId !== "string" || !ORDER_ITEM_UUID_RE.test(variantId)))) {
++        return res.status(400).json({ error: "Product and variant IDs must be UUIDs" });
++      }
+       const key = `${productId || ""}:${variantId || ""}`;
+       if (itemKeys.has(key)) {
+         return res.status(400).json({ error: "Duplicate order item" });
+       }
+       itemKeys.add(key);
+       normalizedItems.push({ productId, variantId, quantity });
+     }
+ 
+     const supabase = getServiceSupabase();
+     const { orgId } = await getUserOrg(supabase, user.id);
+@@ -5374,27 +5380,31 @@ app.patch("/api/orders/:id/items", async (req, res) => {
+         .in("id", productIds)
+         .eq("org_id", orgId);
+       if (error) throw error;
+       if ((products || []).length !== productIds.length) {
+         return res.status(400).json({ error: "One or more products are not available" });
+       }
+     }
+     if (variantIds.length) {
+       const { data: variants, error } = await supabase
+         .from("product_variants")
+-        .select("id")
++        .select("id, product_id")
+         .in("id", variantIds)
+         .eq("org_id", orgId);
+       if (error) throw error;
+       if ((variants || []).length !== variantIds.length) {
+         return res.status(400).json({ error: "One or more variants are not available" });
+       }
++      const variantProducts = new Map((variants || []).map((variant) => [variant.id, variant.product_id]));
++      if (normalizedItems.some((item) => item.variantId && item.productId && variantProducts.get(item.variantId) !== item.productId)) {
++        return res.status(400).json({ error: "Variant does not belong to supplied product" });
++      }
+     }
+ 
+     // The RPC locks the order and inventory rows, applies stock deltas, replaces
+     // items, and updates denormalized order totals in one database transaction.
+     const { error: mutationError } = await supabase.rpc("replace_order_items", {
+       p_org_id: orgId,
+       p_order_id: req.params.id,
+       p_items: normalizedItems,
+     });
+     if (mutationError) {
+diff --git a/src/test/order-items.test.ts b/src/test/order-items.test.ts
+index d9c2a7c..7295229 100644
+--- a/src/test/order-items.test.ts
++++ b/src/test/order-items.test.ts
+@@ -1,32 +1,36 @@
+ import { execFileSync } from "node:child_process";
+ import {
+   existsSync,
+   mkdtempSync,
+   readFileSync,
+   rmSync,
+   writeFileSync,
+ } from "node:fs";
+ import { delimiter, join, resolve } from "node:path";
+ import { tmpdir } from "node:os";
+-import { afterAll, beforeAll, describe, expect, it } from "vitest";
++import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+ import type { Database } from "@/integrations/supabase/types";
+ 
+ const root = resolve(process.cwd());
+ const baselinePath = join(
+   root,
+   "supabase/migrations/20260828000000_canonical_schema_reconciliation.sql",
+ );
+ const migrationPath = join(
+   root,
+   "supabase/migrations/20260902224522_add_order_items.sql",
+ );
++const rpcMigrationPath = join(
++  root,
++  "supabase/migrations/20260903000100_add_order_item_edit_rpc.sql",
++);
+ 
+ function commandPath(name: string): string {
+   const configuredBin = process.env.PG_BINDIR;
+   if (configuredBin) return join(configuredBin, name);
+ 
+   for (const directory of (process.env.PATH || "").split(delimiter)) {
+     const candidate = join(directory, name);
+     if (existsSync(candidate)) return candidate;
+   }
+   throw new Error(`${name} was not found. Install PostgreSQL or set PG_BINDIR.`);
+@@ -108,24 +112,35 @@ beforeAll(() => {
+     create publication supabase_realtime;
+   `);
+   applyFile(baselinePath);
+   runSql(`
+     insert into public.orders (id, org_id, order_number, product, price) values
+       ('30000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '1001', '2x Mango + 3x Unknown', 10.01),
+       ('30000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', '1002', 'Odd legacy text', 10.01),
+       ('30000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000002', '2001', 'Other org item', 1.00);
+     insert into public.products (id, org_id, name, selling_price) values
+       ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Mango', 5.00);
++    insert into public.orders (id, org_id, order_number, product, quantity, price) values
++      ('30000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', '1003', 'Mango', 1, 5.00);
+     insert into public.product_variants (id, org_id, product_id, attributes) values
+       ('60000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '{"size":"large"}');
+   `);
+   applyFile(migrationPath);
++  applyFile(rpcMigrationPath);
++  runSql(`
++    update public.products
++    set stock_quantity = 10
++    where id = '50000000-0000-0000-0000-000000000001';
++    update public.product_variants
++    set stock_quantity = 4, price_adjustment = 1
++    where id = '60000000-0000-0000-0000-000000000001';
++  `);
+ });
+ 
+ afterAll(() => {
+   const dataDirectory = join(workDirectory, "data");
+   execFileSync(pgCtl, ["-D", dataDirectory, "stop", "-m", "fast"], {
+     stdio: "pipe",
+   });
+   rmSync(workDirectory, { recursive: true, force: true });
+ });
+ 
+@@ -158,21 +173,21 @@ describe("order item schema", () => {
+     expect(result).toMatch(/\n\s*0\s*\n/);
+   });
+ 
+   it("preserves every order and unmatched legacy text", () => {
+     const result = runSql(`
+       select
+         (select count(*) from public.orders) as orders,
+         (select count(distinct order_id) from public.order_items) as item_orders,
+         (select count(*) from public.order_items where product_name = 'Odd legacy text' and product_id is null) as legacy_items;
+     `);
+-    expect(result).toMatch(/\n\s*3\s+\|\s+3\s+\|\s+1\s*\n/);
++    expect(result).toMatch(/\n\s*4\s+\|\s+4\s+\|\s+1\s*\n/);
+   });
+ 
+   it("preserves each order total exactly for arbitrary quantities", () => {
+     const result = runSql(`
+       select count(*) as mismatches
+       from (
+         select o.id
+         from public.orders as o
+         join public.order_items as i on i.order_id = o.id and i.org_id = o.org_id
+         group by o.id, o.price
+@@ -277,27 +292,155 @@ describe("order item API contract", () => {
+   });
+ 
+   it("validates catalog ownership before replacing items", () => {
+     const start = source.indexOf('app.patch("/api/orders/:id/items"');
+     const route = source.slice(start, source.indexOf("\n});", start));
+     expect(route).toContain('from("products")');
+     expect(route).toContain('from("product_variants")');
+     expect(route).toContain('.eq("org_id", orgId)');
+   });
+ 
++  it("rejects malformed catalog UUIDs and checks variant/product pairing", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toMatch(/UUID|uuid/i);
++    expect(route).toMatch(/variant.*product|product.*variant/i);
++    expect(route).toContain("product_id");
++  });
++
+   it("returns conflict errors for dispatched orders and insufficient stock", () => {
+     const start = source.indexOf('app.patch("/api/orders/:id/items"');
+     const route = source.slice(start, source.indexOf("\n});", start));
+     expect(source).toMatch(/sent_to_courier|courier_status|consignment_id/);
+     expect(route).toContain("409");
+     expect(route).toMatch(/insufficient stock|stock/i);
+   });
+ 
+   it("keeps wrong-workspace orders invisible", () => {
+     const start = source.indexOf('app.get("/api/orders/:id"');
+     const end = source.indexOf('app.patch("/api/orders/:id/items"');
+     const detail = source.slice(start, end);
+     expect(detail).toContain('.eq("id", req.params.id)');
+     expect(detail).toContain('.eq("org_id", orgId)');
+     expect(detail).toContain("404");
+   });
+ });
++
++describe("order item replacement service", () => {
++  const orderId = "30000000-0000-0000-0000-000000000004";
++  const orgId = "40000000-0000-0000-0000-000000000001";
++  const productId = "50000000-0000-0000-0000-000000000001";
++  const variantId = "60000000-0000-0000-0000-000000000001";
++
++  beforeEach(() => {
++    runSql(`
++      insert into public.products (id, org_id, name, selling_price, stock_quantity)
++      values ('${productId}', '${orgId}', 'Mango', 5.00, 10)
++      on conflict (id) do update set org_id = excluded.org_id, name = excluded.name,
++        selling_price = excluded.selling_price, stock_quantity = excluded.stock_quantity;
++      insert into public.product_variants (id, org_id, product_id, attributes, stock_quantity, price_adjustment)
++      values ('${variantId}', '${orgId}', '${productId}', '{"size":"large"}', 4, 1)
++      on conflict (id) do update set org_id = excluded.org_id, product_id = excluded.product_id,
++        stock_quantity = excluded.stock_quantity, price_adjustment = excluded.price_adjustment;
++      delete from public.order_items where order_id = '${orderId}';
++      insert into public.order_items (org_id, order_id, product_id, product_name, unit_price, quantity)
++      values ('${orgId}', '${orderId}', '${productId}', 'Mango', 5, 1);
++      update public.orders set sent_to_courier = false, consignment_id = null,
++        tracking_code = null, courier_status = null, product = 'Mango', quantity = 1, price = 5
++      where id = '${orderId}';
++    `);
++  });
++
++  it("supports add, increase, decrease, and remove with inventory deltas", () => {
++    const result = runSql(`
++      begin;
++      select public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"${productId}","quantity":2},{"variantId":"${variantId}","quantity":1}]');
++      select quantity, price, product from public.orders where id = '${orderId}';
++      select stock_quantity from public.products where id = '${productId}';
++      select stock_quantity from public.product_variants where id = '${variantId}';
++      select public.replace_order_items('${orgId}', '${orderId}', '[{"variantId":"${variantId}","quantity":2}]');
++      select quantity, price from public.orders where id = '${orderId}';
++      select stock_quantity from public.products where id = '${productId}';
++      select stock_quantity from public.product_variants where id = '${variantId}';
++      select public.replace_order_items('${orgId}', '${orderId}', '[]');
++      select quantity, price from public.orders where id = '${orderId}';
++      select stock_quantity from public.products where id = '${productId}';
++      select stock_quantity from public.product_variants where id = '${variantId}';
++      rollback;
++    `);
++    expect(result).toMatch(/3\s+\|\s+16\.00/);
++    expect(result).toMatch(/2\s+\|\s+12\.00/);
++    expect(result).toMatch(/0\s+\|\s+0/);
++    expect(result).toMatch(/9\n/);
++    expect(result).toMatch(/3\n/);
++    expect(result).toMatch(/11\n/);
++    expect(result).toMatch(/4\n/);
++  });
++
++  it("recalculates totals from catalog prices and ignores client totals", () => {
++    const result = runSql(`
++      begin;
++      select public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"${productId}","quantity":2}]');
++      select quantity, price from public.orders where id = '${orderId}';
++      rollback;
++    `);
++    expect(result).toMatch(/2\s+\|\s+10\.00/);
++  });
++
++  it("loads detail data only for the authenticated workspace", () => {
++    const result = runSql(`
++      select count(*)
++      from public.orders as o
++      join public.order_items as i on i.order_id = o.id and i.org_id = o.org_id
++      where o.id = '${orderId}' and o.org_id = '${orgId}';
++      select count(*)
++      from public.orders as o
++      join public.order_items as i on i.order_id = o.id and i.org_id = o.org_id
++      where o.id = '${orderId}' and o.org_id = '40000000-0000-0000-0000-000000000002';
++    `);
++    expect(result).toMatch(/\n\s*1\s*\n/);
++    expect(result).toMatch(/\n\s*0\s*\n/);
++  });
++
++  it("rejects malformed UUIDs and duplicate item keys in the service", () => {
++    expect(() => runSql(`select public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"not-a-uuid","quantity":1}]');`)).toThrow();
++    expect(() => runSql(`select public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"${productId}","quantity":1},{"productId":"${productId}","quantity":2}]');`)).toThrow();
++  });
++
++  it("rolls back inventory and items when stock is insufficient", () => {
++    const result = runSql(`
++      begin;
++      do $$ begin
++        perform public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"${productId}","quantity":12}]');
++      exception when others then null;
++      end $$;
++      select quantity, price from public.orders where id = '${orderId}';
++      select count(*) from public.order_items where order_id = '${orderId}';
++      select stock_quantity from public.products where id = '${productId}';
++      rollback;
++    `);
++    expect(result).toMatch(/1\s+\|\s+5\.00/);
++    expect(result).toMatch(/1\n/);
++    expect(result).toMatch(/10\n/);
++  });
++
++  it("rejects wrong-org orders and mismatched product variants", () => {
++    expect(() => runSql(`select public.replace_order_items('40000000-0000-0000-0000-000000000002', '${orderId}', '[]');`)).toThrow();
++    expect(() => runSql(`select public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"30000000-0000-0000-0000-000000000003","variantId":"${variantId}","quantity":1}]');`)).toThrow();
++  });
++
++  it("locks dispatched orders inside the transaction", () => {
++    const result = runSql(`
++      begin;
++      update public.orders set sent_to_courier = true where id = '${orderId}';
++      do $$ begin
++        perform public.replace_order_items('${orgId}', '${orderId}', '[{"productId":"${productId}","quantity":2}]');
++      exception when others then null;
++      end $$;
++      select quantity, price, stock_quantity
++      from public.orders join public.products on products.id = '${productId}'
++      where orders.id = '${orderId}';
++      rollback;
++    `);
++    expect(result).toMatch(/1\s+\|\s+5\.00\s+\|\s+10/);
++  });
++});
+diff --git a/supabase/migrations/20260903000100_add_order_item_edit_rpc.sql b/supabase/migrations/20260903000100_add_order_item_edit_rpc.sql
+new file mode 100644
+index 0000000..ce9542a
+--- /dev/null
++++ b/supabase/migrations/20260903000100_add_order_item_edit_rpc.sql
+@@ -0,0 +1,226 @@
++begin;
++
++create or replace function public.replace_order_items(
++  p_org_id uuid,
++  p_order_id uuid,
++  p_items jsonb
++)
++returns void
++language plpgsql
++security invoker
++set search_path = ''
++as $$
++declare
++  locked_order public.orders%rowtype;
++  affected record;
++  old_quantity integer;
++  new_quantity integer;
++  delta integer;
++  available_stock integer;
++  total_quantity integer;
++  total_price numeric;
++  product_summary text;
++begin
++  if jsonb_typeof(p_items) <> 'array' then
++    raise exception 'items must be an array' using errcode = '22023';
++  end if;
++
++  -- This lock is the serialization point for dispatch checks and item edits.
++  select * into locked_order
++  from public.orders
++  where id = p_order_id and org_id = p_org_id
++  for update;
++  if not found then
++    raise exception 'order not found' using errcode = 'P0002';
++  end if;
++
++  if locked_order.sent_to_courier
++     or locked_order.consignment_id is not null
++     or locked_order.tracking_code is not null
++     or locked_order.courier_status is not null then
++    raise exception 'order items cannot be edited after courier dispatch' using errcode = 'P0001';
++  end if;
++
++  drop table if exists pg_temp.order_item_edit;
++  create temporary table order_item_edit (
++    product_id uuid,
++    variant_id uuid,
++    quantity integer,
++    unique (product_id, variant_id)
++  ) on commit drop;
++
++  insert into order_item_edit (product_id, variant_id, quantity)
++  select
++    nullif(element->>'productId', '')::uuid,
++    nullif(element->>'variantId', '')::uuid,
++    (element->>'quantity')::integer
++  from jsonb_array_elements(p_items) as elements(element);
++
++  if exists (select 1 from order_item_edit where product_id is null and variant_id is null) then
++    raise exception 'each item requires a productId or variantId' using errcode = '22023';
++  end if;
++  if exists (
++    select 1
++    from order_item_edit
++    group by coalesce(product_id, '00000000-0000-0000-0000-000000000000'::uuid),
++             coalesce(variant_id, '00000000-0000-0000-0000-000000000000'::uuid)
++    having count(*) > 1
++  ) then
++    raise exception 'duplicate order item' using errcode = '23505';
++  end if;
++  if exists (select 1 from order_item_edit where quantity < 1) then
++    raise exception 'item quantity must be positive' using errcode = '22023';
++  end if;
++
++  if exists (
++    select 1
++    from order_item_edit as e
++    left join public.products as p on p.id = e.product_id and p.org_id = p_org_id
++    where e.product_id is not null and p.id is null
++  ) then
++    raise exception 'product does not belong to workspace' using errcode = '23503';
++  end if;
++  if exists (
++    select 1
++    from order_item_edit as e
++    left join public.product_variants as v on v.id = e.variant_id and v.org_id = p_org_id
++    where e.variant_id is not null and v.id is null
++  ) then
++    raise exception 'variant does not belong to workspace' using errcode = '23503';
++  end if;
++  if exists (
++    select 1
++    from order_item_edit as e
++    join public.product_variants as v on v.id = e.variant_id and v.org_id = p_org_id
++    where e.product_id is not null and v.product_id <> e.product_id
++  ) then
++    raise exception 'variant does not belong to supplied product' using errcode = '23514';
++  end if;
++
++  update order_item_edit as e
++  set product_id = v.product_id
++  from public.product_variants as v
++  where e.variant_id = v.id and v.org_id = p_org_id and e.product_id is null;
++
++  -- Lock every affected inventory row before calculating any delta.
++  for affected in
++    select distinct product_id
++    from (
++      select product_id from order_item_edit where variant_id is null
++      union all
++      select product_id from public.order_items
++      where org_id = p_org_id and order_id = p_order_id and variant_id is null
++    ) as ids
++    where product_id is not null
++    order by product_id
++  loop
++    perform 1 from public.products where id = affected.product_id and org_id = p_org_id for update;
++  end loop;
++  for affected in
++    select distinct variant_id
++    from (
++      select variant_id from order_item_edit where variant_id is not null
++      union all
++      select variant_id from public.order_items
++      where org_id = p_org_id and order_id = p_order_id and variant_id is not null
++    ) as ids
++    where variant_id is not null
++    order by variant_id
++  loop
++    perform 1 from public.product_variants where id = affected.variant_id and org_id = p_org_id for update;
++  end loop;
++
++  for affected in
++    select distinct product_id
++    from (
++      select product_id from order_item_edit where variant_id is null
++      union all
++      select product_id from public.order_items
++      where org_id = p_org_id and order_id = p_order_id and variant_id is null
++    ) as ids
++    where product_id is not null
++    order by product_id
++  loop
++    select coalesce(sum(quantity), 0) into old_quantity
++    from public.order_items
++    where org_id = p_org_id and order_id = p_order_id
++      and product_id = affected.product_id and variant_id is null;
++    select coalesce(sum(quantity), 0) into new_quantity
++    from order_item_edit
++    where product_id = affected.product_id and variant_id is null;
++    delta := new_quantity - old_quantity;
++    select stock_quantity into available_stock
++    from public.products
++    where id = affected.product_id and org_id = p_org_id;
++    if delta > available_stock then
++      raise exception 'insufficient stock for product %', affected.product_id using errcode = 'P0001';
++    end if;
++    update public.products
++    set stock_quantity = stock_quantity - delta
++    where id = affected.product_id and org_id = p_org_id;
++  end loop;
++
++  for affected in
++    select distinct variant_id
++    from (
++      select variant_id from order_item_edit where variant_id is not null
++      union all
++      select variant_id from public.order_items
++      where org_id = p_org_id and order_id = p_order_id and variant_id is not null
++    ) as ids
++    where variant_id is not null
++    order by variant_id
++  loop
++    select coalesce(sum(quantity), 0) into old_quantity
++    from public.order_items
++    where org_id = p_org_id and order_id = p_order_id and variant_id = affected.variant_id;
++    select coalesce(sum(quantity), 0) into new_quantity
++    from order_item_edit
++    where variant_id = affected.variant_id;
++    delta := new_quantity - old_quantity;
++    select stock_quantity into available_stock
++    from public.product_variants
++    where id = affected.variant_id and org_id = p_org_id;
++    if delta > available_stock then
++      raise exception 'insufficient stock for variant %', affected.variant_id using errcode = 'P0001';
++    end if;
++    update public.product_variants
++    set stock_quantity = stock_quantity - delta
++    where id = affected.variant_id and org_id = p_org_id;
++  end loop;
++
++  delete from public.order_items where org_id = p_org_id and order_id = p_order_id;
++  insert into public.order_items (
++    org_id, order_id, product_id, variant_id, product_name, variant_name,
++    unit_price, quantity
++  )
++  select
++    p_org_id,
++    p_order_id,
++    e.product_id,
++    e.variant_id,
++    p.name,
++    case when v.id is null then null else v.attributes::text end,
++    coalesce(p.selling_price, 0) + case when v.id is null then 0 else coalesce(v.price_adjustment, 0) end,
++    e.quantity
++  from order_item_edit as e
++  join public.products as p on p.id = e.product_id and p.org_id = p_org_id
++  left join public.product_variants as v on v.id = e.variant_id and v.org_id = p_org_id;
++
++  select coalesce(sum(quantity), 0), coalesce(sum(unit_price * quantity), 0),
++         string_agg(format('%sx %s', quantity, product_name), ' + ' order by id)
++  into total_quantity, total_price, product_summary
++  from public.order_items
++  where org_id = p_org_id and order_id = p_order_id;
++  update public.orders
++  set quantity = total_quantity, price = total_price, product = product_summary
++  where id = p_order_id and org_id = p_org_id;
++end;
++$$;
++
++revoke execute on function public.replace_order_items(uuid, uuid, jsonb) from public, anon, authenticated;
++grant execute on function public.replace_order_items(uuid, uuid, jsonb) to service_role;
++
++notify pgrst, 'reload schema';
++
++commit;

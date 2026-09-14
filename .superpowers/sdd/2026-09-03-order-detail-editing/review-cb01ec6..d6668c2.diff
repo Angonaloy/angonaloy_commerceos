@@ -1,0 +1,306 @@
+# Review package: cb01ec6..HEAD
+
+## Commits
+d6668c2 fix: address order detail review findings
+
+## Files changed
+ src/pages/OrderDetail.tsx     | 13 +++++++----
+ src/test/order-detail.test.ts | 53 +++++++++++++++++++++++++++++++++++++------
+ 2 files changed, 55 insertions(+), 11 deletions(-)
+
+## Diff
+diff --git a/src/pages/OrderDetail.tsx b/src/pages/OrderDetail.tsx
+index 484a22c..b38c27c 100644
+--- a/src/pages/OrderDetail.tsx
++++ b/src/pages/OrderDetail.tsx
+@@ -1,11 +1,11 @@
+-import { useEffect, useState } from "react";
++import { useEffect, useRef, useState } from "react";
+ import { useNavigate, useParams } from "react-router-dom";
+ import { useQuery, useQueryClient } from "@tanstack/react-query";
+ import { ArrowLeft, Check, Plus, Trash } from "@phosphor-icons/react";
+ import { apiFetch } from "@/lib/api";
+ import { Button as BuiButton } from "@/components/base/buttons/button";
+ import { Input as BuiInput } from "@/components/base/input/input";
+ import { RichButton } from "@/components/ui/rich-button";
+ import { Spinner } from "@/components/ui/ios-spinner";
+ 
+ type Order = {
+@@ -16,20 +16,21 @@ type Order = {
+   address?: string | null;
+   status?: string | null;
+   payment_method?: string | null;
+   delivery_rate?: number | null;
+   price?: number | null;
+   courier_name?: string | null;
+   courier_status?: string | null;
+   consignment_id?: string | null;
+   fraud_data?: { risk_level?: string } | null;
+   created_at?: string | null;
++  updated_at?: string | null;
+   sent_to_courier?: boolean | null;
+ };
+ 
+ type OrderItem = {
+   id: string;
+   product_id: string | null;
+   variant_id: string | null;
+   product_name: string | null;
+   variant_name: string | null;
+   unit_price: number;
+@@ -85,20 +86,21 @@ function ItemRow({ item, canEdit, onQuantity, onRemove }: { item: OrderItem; can
+ 
+ export default function OrderDetail() {
+   const { id } = useParams();
+   const navigate = useNavigate();
+   const queryClient = useQueryClient();
+   const [draft, setDraft] = useState<OrderItem[]>([]);
+   const [selectedProduct, setSelectedProduct] = useState("");
+   const [selectedVariant, setSelectedVariant] = useState("");
+   const [saving, setSaving] = useState(false);
+   const [saveError, setSaveError] = useState("");
++  const initializedOrderId = useRef<string | null>(null);
+ 
+   const detailQuery = useQuery<OrderDetailResponse>({
+     queryKey: [`/api/orders/${id}`],
+     enabled: Boolean(id),
+     queryFn: async () => {
+       const res = await apiFetch(`/api/orders/${id}`);
+       const json = await res.json().catch(() => ({}));
+       if (!res.ok) throw new ApiError(json.error || "Failed to load order", res.status);
+       return json;
+     },
+@@ -106,22 +108,25 @@ export default function OrderDetail() {
+   const productsQuery = useQuery<ProductsResponse>({
+     queryKey: ["/api/products"],
+     queryFn: async () => {
+       const res = await apiFetch("/api/products");
+       if (!res.ok) throw new Error("Failed to load products");
+       return res.json();
+     },
+   });
+ 
+   useEffect(() => {
+-    if (detailQuery.data) setDraft(detailQuery.data.items);
+-  }, [detailQuery.data]);
++    if (detailQuery.data && id && initializedOrderId.current !== id) {
++      setDraft(detailQuery.data.items);
++      initializedOrderId.current = id;
++    }
++  }, [detailQuery.data, id]);
+ 
+   const detail = detailQuery.data;
+   const order = detail?.order;
+   const product = productsQuery.data?.products.find((candidate) => candidate.id === selectedProduct);
+   const subtotal = draft.reduce((total, item) => total + item.unit_price * item.quantity, 0);
+   const quantity = draft.reduce((total, item) => total + item.quantity, 0);
+ 
+   function addItem() {
+     if (!product) return;
+     const variant = product.variants.find((candidate) => candidate.id === selectedVariant);
+@@ -164,21 +169,21 @@ export default function OrderDetail() {
+     <div className="min-h-full space-y-6 bg-white p-1 lg:p-2">
+       <div className="flex items-center justify-between">
+         <div className="flex items-center gap-3">
+           <BuiButton variant="ghost" size="small" iconOnly leadingIcon={ArrowLeft} aria-label="Back" onClick={() => navigate("/")} />
+           <div><h1 className="font-sf-display text-[22px] font-bold tracking-tight text-black">Order detail</h1><p className="mt-1 text-[13px] text-black/45">{order?.order_number ? `#${order.order_number}` : ""}</p></div>
+         </div>
+       </div>
+ 
+       {detailQuery.isPending ? <div data-testid="order-detail-loading" className="grid place-items-center py-24"><Spinner size="md" /></div> : detailQuery.error && (detailQuery.error as ApiError).status === 404 ? <div className="py-24 text-center"><p className="text-[15px] font-medium text-black">Order not found.</p><button type="button" onClick={() => navigate("/")} className="mt-2 text-[13px] text-black/50 underline">Back to orders</button></div> : detailQuery.error ? <div className="py-24 text-center text-[13px] text-red-600">{detailQuery.error.message}</div> : order && (
+         <>
+-          <section className="border-b border-black/[0.08] pb-6"><div className="mb-4 flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/45">Order summary</h2><span className="rounded-[8px] bg-black/[0.05] px-2.5 py-1 text-[10px] uppercase tracking-widest text-black/60">{order.status || "pending"}</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"><DetailField label="Customer" value={order.contact_name} /><DetailField label="Phone" value={order.phone} /><DetailField label="Delivery address" value={order.address} /><DetailField label="Payment" value={order.payment_method} /><DetailField label="Order total" value={money(order.price)} /><DetailField label="Courier" value={order.courier_name || order.courier_status} /><DetailField label="Fraud" value={order.fraud_data?.risk_level} /><DetailField label="Created" value={order.created_at ? new Date(order.created_at).toLocaleString("en-BD") : null} /><DetailField label="Consignment" value={order.consignment_id} /></div></section>
++          <section className="border-b border-black/[0.08] pb-6"><div className="mb-4 flex items-center justify-between"><h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/45">Order summary</h2><span className="rounded-[8px] bg-black/[0.05] px-2.5 py-1 text-[10px] uppercase tracking-widest text-black/60">{order.status || "pending"}</span></div><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4"><DetailField label="Customer" value={order.contact_name} /><DetailField label="Phone" value={order.phone} /><DetailField label="Delivery address" value={order.address} /><DetailField label="Payment" value={order.payment_method} /><DetailField label="Order total" value={money(order.price)} /><DetailField label="Delivery fee" value={money(order.delivery_rate)} /><DetailField label="Courier" value={order.courier_name || order.courier_status} /><DetailField label="Fraud" value={order.fraud_data?.risk_level} /><DetailField label="Created" value={order.created_at ? new Date(order.created_at).toLocaleString("en-BD") : null} /><DetailField label="Updated" value={order.updated_at ? new Date(order.updated_at).toLocaleString("en-BD") : null} /><DetailField label="Consignment" value={order.consignment_id} /></div></section>
+           <section><div className="mb-2 flex items-center justify-between"><div><h2 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-black/45">Line items</h2><p className="mt-1 text-[12px] text-black/40">{quantity} item{quantity === 1 ? "" : "s"} · {money(subtotal)} subtotal</p></div></div>
+             {!detail.canEditItems && <p className="mb-2 rounded-[8px] bg-amber-50 px-3 py-2 text-[12px] text-amber-800">Editing is locked after courier dispatch.</p>}
+             <div>{draft.map((item) => <ItemRow key={item.id} item={item} canEdit={detail.canEditItems} onQuantity={(value) => setDraft((items) => items.map((current) => current.id === item.id ? { ...current, quantity: value } : current))} onRemove={() => setDraft((items) => items.filter((current) => current.id !== item.id))} />)}</div>
+             <div className="mt-4 grid gap-3 rounded-[14px] border border-dashed border-black/[0.12] bg-black/[0.02] p-3 md:grid-cols-[1fr_1fr_auto] md:items-end"><div><label htmlFor="add-product" className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-black/40">Product</label><select id="add-product" aria-label="Add product" value={selectedProduct} disabled={!detail.canEditItems} onChange={(event) => { setSelectedProduct(event.target.value); setSelectedVariant(""); }} className="h-9 w-full rounded-[12px] border border-black/[0.1] bg-white px-3 text-[13px] outline-none disabled:opacity-40"><option value="">Select product</option>{(productsQuery.data?.products || []).map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></div><div><label htmlFor="add-variant" className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-black/40">Variant</label><select id="add-variant" aria-label="Add variant" value={selectedVariant} onChange={(event) => setSelectedVariant(event.target.value)} disabled={!detail.canEditItems || !product || product.variants.length === 0} className="h-9 w-full rounded-[12px] border border-black/[0.1] bg-white px-3 text-[13px] outline-none disabled:opacity-40"><option value="">{product?.variants.length ? "Select variant" : "Default"}</option>{product?.variants.map((variant) => <option key={variant.id} value={variant.id}>{attributes(variant)}</option>)}</select></div><RichButton type="button" onClick={addItem} disabled={!detail.canEditItems || !product || (product.variants.length > 0 && !selectedVariant)} className="h-9 rounded-[8px]"><Plus weight="light" size={16} /> Add item</RichButton></div>
+           </section>
+           {saveError && <p role="alert" className="text-[13px] text-red-600">{saveError}</p>}
+           <div className="flex items-center gap-2"><RichButton type="button" onClick={save} disabled={!detail.canEditItems || saving} className="h-9 rounded-[8px]"><span className="flex items-center gap-2">{saving ? <Spinner size="sm" /> : <Check weight="light" size={16} />}{saving ? "Saving…" : "Save changes"}</span></RichButton><RichButton type="button" onClick={() => navigate("/")} disabled={saving} className="bg-transparent text-text-secondary shadow-none hover:bg-black/[0.05]">Cancel</RichButton><span className="ml-auto font-mono text-[15px] tabular-nums text-black">Total {money(subtotal + (order.delivery_rate || 0))}</span></div>
+         </>
+       )}
+     </div>
+diff --git a/src/test/order-detail.test.ts b/src/test/order-detail.test.ts
+index 8e744bf..9313b29 100644
+--- a/src/test/order-detail.test.ts
++++ b/src/test/order-detail.test.ts
+@@ -17,57 +17,63 @@ const order = {
+   status: "confirmed",
+   payment_method: "Cash on delivery",
+   delivery_rate: 80,
+   price: 580,
+   quantity: 1,
+   product: "Premium Mango",
+   sent_to_courier: false,
+   courier_status: null,
+   consignment_id: null,
+   created_at: "2026-09-03T09:00:00Z",
++  updated_at: "2026-09-03T10:00:00Z",
+ };
+ 
+ const products = {
+   products: [
+     {
+       id: "product-2",
+       name: "Honey Jar",
+       selling_price: 250,
+       variants: [{ id: "variant-2", attributes: { size: "500g" }, price_adjustment: 25 }],
+     },
+   ],
+ };
+ 
+ const detail = {
+   order,
+   items: [{ id: "item-1", product_id: "product-1", variant_id: null, product_name: "Premium Mango", variant_name: null, unit_price: 500, quantity: 1 }],
+   canEditItems: true,
+ };
+ 
+-function response(body: unknown, ok = true) {
+-  return { ok, status: ok ? 200 : 404, json: async () => body } as Response;
++function response(body: unknown, ok = true, status = ok ? 200 : 404) {
++  return { ok, status, json: async () => body } as Response;
+ }
+ 
+ function renderPage(id = "order-1") {
+   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+-  return render(createElement(
++  const result = render(createElement(
+     QueryClientProvider,
+     { client: queryClient },
+     createElement(
+       MemoryRouter,
+       { initialEntries: [`/orders/${id}`] },
+-      createElement(Routes, null, createElement(Route, { path: "/orders/:id", element: createElement(OrderDetail) })),
++      createElement(Routes, null,
++        createElement(Route, { path: "/orders/:id", element: createElement(OrderDetail) }),
++        createElement(Route, { path: "/", element: createElement("div", null, "Orders dashboard") }),
++      ),
+     ),
+   ));
++  return { ...result, queryClient };
+ }
+ 
+ beforeEach(() => {
++  apiFetch.mockClear();
+   apiFetch.mockImplementation(async (url: string) => {
+     if (url === "/api/orders/order-1") return response(detail);
+     if (url === "/api/products") return response(products);
+     throw new Error(`Unexpected API request: ${url}`);
+   });
+ });
+ 
+ describe("OrderDetail", () => {
+   it("shows a loading state while order detail is pending", () => {
+     apiFetch.mockReturnValue(new Promise(() => {}));
+@@ -81,74 +87,107 @@ describe("OrderDetail", () => {
+     expect(await screen.findByText(/Order not found/)).toBeInTheDocument();
+   });
+ 
+   it("renders the order summary and current line items", async () => {
+     renderPage();
+     expect(await screen.findByText("Ayesha Rahman")).toBeInTheDocument();
+     expect(screen.getByText("#ML-1001")).toBeInTheDocument();
+     expect(screen.getByText("Dhanmondi, Dhaka")).toBeInTheDocument();
+     expect(screen.getByText("Premium Mango")).toBeInTheDocument();
+     expect(screen.getByText("৳580")).toBeInTheDocument();
++    expect(screen.getByText("Updated")).toBeInTheDocument();
++    expect(screen.getByText("৳80")).toBeInTheDocument();
+   });
+ 
+   it("adds a product and variant, edits quantity, and removes a line", async () => {
+     renderPage();
+     const addProduct = await screen.findByLabelText("Add product");
+     fireEvent.change(addProduct, { target: { value: "product-2" } });
+     expect(await screen.findByLabelText("Add variant")).toBeInTheDocument();
+     fireEvent.change(screen.getByLabelText("Add variant"), { target: { value: "variant-2" } });
+     fireEvent.click(screen.getByRole("button", { name: "Add item" }));
+     expect(screen.getAllByText("Honey Jar").length).toBeGreaterThan(1);
+ 
+     const mangoRow = screen.getByTestId("order-item-item-1");
+     fireEvent.change(within(mangoRow).getByRole("spinbutton"), { target: { value: "3" } });
+     fireEvent.click(within(mangoRow).getByRole("button", { name: "Remove Premium Mango" }));
+     expect(screen.queryByTestId("order-item-item-1")).not.toBeInTheDocument();
+   });
+ 
+   it("saves only item identity and quantities and shows saving state", async () => {
+     let resolveSave: (value: Response) => void = () => undefined;
++    const savedDetail = { ...detail, order: { ...order, updated_at: "2026-09-03T11:00:00Z" }, items: [{ ...detail.items[0], product_name: "Updated Mango" }] };
+     apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+-      if (url === "/api/orders/order-1" && init?.method === "PATCH") {
++      if (url === "/api/orders/order-1/items" && init?.method === "PATCH") {
+         return new Promise<Response>((resolve) => { resolveSave = resolve; });
+       }
+       if (url === "/api/orders/order-1") return response(detail);
+       if (url === "/api/products") return response(products);
+       throw new Error(`Unexpected API request: ${url}`);
+     });
+-    renderPage();
++    const { queryClient } = renderPage();
+     await screen.findByText("Ayesha Rahman");
+     fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+     expect(screen.getByRole("button", { name: /Saving/i })).toBeDisabled();
+     const saveCall = apiFetch.mock.calls.find(([, init]) => init?.method === "PATCH");
+     expect(JSON.parse(saveCall[1].body)).toEqual({ items: [{ productId: "product-1", variantId: null, quantity: 1 }] });
+-    resolveSave(response(detail));
++    resolveSave(response(savedDetail));
+     await waitFor(() => expect(screen.getByRole("button", { name: /Save changes/i })).not.toBeDisabled());
++    expect(screen.getByText("Updated Mango")).toBeInTheDocument();
++    expect(queryClient.getQueryData(["/api/orders/order-1"])).toEqual(savedDetail);
++  });
++
++  it("does not overwrite an edited draft when detail data refetches", async () => {
++    const { queryClient } = renderPage();
++    await screen.findByText("Ayesha Rahman");
++    fireEvent.change(within(screen.getByTestId("order-item-item-1")).getByRole("spinbutton"), { target: { value: "4" } });
++    queryClient.setQueryData(["/api/orders/order-1"], { ...detail, items: [{ ...detail.items[0], quantity: 9 }] });
++    await waitFor(() => expect(within(screen.getByTestId("order-item-item-1")).getByRole("spinbutton")).toHaveValue(4));
+   });
+ 
+   it("preserves the draft and displays a save error", async () => {
+     apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+       if (url === "/api/orders/order-1/items" && init?.method === "PATCH") return response({ error: "Insufficient stock" }, false);
+       if (url === "/api/orders/order-1") return response(detail);
+       if (url === "/api/products") return response(products);
+       throw new Error(`Unexpected API request: ${url}`);
+     });
+     renderPage();
+     await screen.findByText("Ayesha Rahman");
+     fireEvent.change(within(screen.getByTestId("order-item-item-1")).getByRole("spinbutton"), { target: { value: "2" } });
+     fireEvent.click(screen.getByRole("button", { name: /Save changes/i }));
+     expect(await screen.findByText("Insufficient stock")).toBeInTheDocument();
+     expect(within(screen.getByTestId("order-item-item-1")).getByRole("spinbutton")).toHaveValue(2);
+   });
+ 
++  it("shows non-404 detail request errors", async () => {
++    apiFetch.mockImplementation(async (url: string) => {
++      if (url === "/api/orders/order-1") return response({ error: "Service unavailable" }, false, 500);
++      if (url === "/api/products") return response(products);
++      throw new Error(`Unexpected API request: ${url}`);
++    });
++    renderPage();
++    expect(await screen.findByText("Service unavailable")).toBeInTheDocument();
++  });
++
++  it("navigates back without saving when cancel is clicked", async () => {
++    renderPage();
++    await screen.findByText("Ayesha Rahman");
++    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
++    expect(await screen.findByText("Orders dashboard")).toBeInTheDocument();
++    expect(apiFetch.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
++  });
++
+   it("locks item editing when the order has been dispatched", async () => {
+     apiFetch.mockImplementation(async (url: string) => {
+       if (url === "/api/orders/order-1") return response({ ...detail, canEditItems: false, order: { ...order, sent_to_courier: true, courier_status: "in_transit" } });
+       if (url === "/api/products") return response(products);
+       throw new Error(`Unexpected API request: ${url}`);
+     });
+     renderPage();
+     expect(await screen.findByText(/Editing is locked after courier dispatch/i)).toBeInTheDocument();
+     expect(screen.getByLabelText("Add product")).toBeDisabled();
++    expect(within(screen.getByTestId("order-item-item-1")).getByRole("spinbutton")).toBeDisabled();
++    expect(within(screen.getByTestId("order-item-item-1")).getByRole("button", { name: "Remove Premium Mango" })).toBeDisabled();
+     expect(screen.getByRole("button", { name: /Save changes/i })).toBeDisabled();
+   });
+ });

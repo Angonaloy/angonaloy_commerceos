@@ -1,0 +1,268 @@
+# Review package: ef11b90..HEAD
+
+## Commits
+a79f0d7 feat: add order item editing API
+
+## Files changed
+ server/index.js              | 138 +++++++++++++++++++++++++++++++++++++++++++
+ src/test/order-items.test.ts |  79 +++++++++++++++++++++++++
+ 2 files changed, 217 insertions(+)
+
+## Diff
+diff --git a/server/index.js b/server/index.js
+index 1886c1e..ac93849 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -5272,20 +5272,158 @@ app.get("/api/orders/recent-notifications", async (req, res) => {
+       .order("created_at", { ascending: false })
+       .limit(10);
+ 
+     if (error) throw error;
+     return res.json({ orders: data || [] });
+   } catch (e) {
+     return res.status(500).json({ error: e.message });
+   }
+ });
+ 
++function isOrderDispatched(order) {
++  return Boolean(
++    order.sent_to_courier ||
++    order.consignment_id ||
++    order.tracking_code ||
++    order.courier_status,
++  );
++}
++
++app.get("/api/orders/:id", async (req, res) => {
++  try {
++    const { user } = await getUser(getToken(req));
++    if (!user) return res.status(401).json({ error: "Unauthorized" });
++
++    const supabase = getServiceSupabase();
++    const { orgId } = await getUserOrg(supabase, user.id);
++    const { data: order, error: orderError } = await supabase
++      .from("orders")
++      .select("*")
++      .eq("id", req.params.id)
++      .eq("org_id", orgId)
++      .maybeSingle();
++    if (orderError) throw orderError;
++    if (!order) return res.status(404).json({ error: "Order not found" });
++
++    const { data: items, error: itemsError } = await supabase
++      .from("order_items")
++      .select("*")
++      .eq("order_id", req.params.id)
++      .eq("org_id", orgId)
++      .order("created_at", { ascending: true });
++    if (itemsError) throw itemsError;
++
++    return res.json({ order, items: items || [], canEditItems: !isOrderDispatched(order) });
++  } catch (e) {
++    return res.status(500).json({ error: e.message });
++  }
++});
++
++app.patch("/api/orders/:id/items", async (req, res) => {
++  try {
++    const { user } = await getUser(getToken(req));
++    if (!user) return res.status(401).json({ error: "Unauthorized" });
++
++    const requestedItems = req.body?.items;
++    if (!Array.isArray(requestedItems)) {
++      return res.status(400).json({ error: "items array required" });
++    }
++
++    const normalizedItems = [];
++    const itemKeys = new Set();
++    for (const item of requestedItems) {
++      if (!item || typeof item !== "object") {
++        return res.status(400).json({ error: "Each item must be an object" });
++      }
++      const productId = item.productId || null;
++      const variantId = item.variantId || null;
++      const quantity = item.quantity;
++      if (!productId && !variantId) {
++        return res.status(400).json({ error: "Each item requires a productId or variantId" });
++      }
++      if (!Number.isInteger(quantity) || quantity < 1) {
++        return res.status(400).json({ error: "Item quantity must be a positive integer" });
++      }
++      const key = `${productId || ""}:${variantId || ""}`;
++      if (itemKeys.has(key)) {
++        return res.status(400).json({ error: "Duplicate order item" });
++      }
++      itemKeys.add(key);
++      normalizedItems.push({ productId, variantId, quantity });
++    }
++
++    const supabase = getServiceSupabase();
++    const { orgId } = await getUserOrg(supabase, user.id);
++    const { data: order, error: orderError } = await supabase
++      .from("orders")
++      .select("*")
++      .eq("id", req.params.id)
++      .eq("org_id", orgId)
++      .maybeSingle();
++    if (orderError) throw orderError;
++    if (!order) return res.status(404).json({ error: "Order not found" });
++    if (isOrderDispatched(order)) {
++      return res.status(409).json({ error: "Order items cannot be edited after courier dispatch" });
++    }
++
++    const productIds = [...new Set(normalizedItems.map((item) => item.productId).filter(Boolean))];
++    const variantIds = [...new Set(normalizedItems.map((item) => item.variantId).filter(Boolean))];
++    if (productIds.length) {
++      const { data: products, error } = await supabase
++        .from("products")
++        .select("id")
++        .in("id", productIds)
++        .eq("org_id", orgId);
++      if (error) throw error;
++      if ((products || []).length !== productIds.length) {
++        return res.status(400).json({ error: "One or more products are not available" });
++      }
++    }
++    if (variantIds.length) {
++      const { data: variants, error } = await supabase
++        .from("product_variants")
++        .select("id")
++        .in("id", variantIds)
++        .eq("org_id", orgId);
++      if (error) throw error;
++      if ((variants || []).length !== variantIds.length) {
++        return res.status(400).json({ error: "One or more variants are not available" });
++      }
++    }
++
++    // The RPC locks the order and inventory rows, applies stock deltas, replaces
++    // items, and updates denormalized order totals in one database transaction.
++    const { error: mutationError } = await supabase.rpc("replace_order_items", {
++      p_org_id: orgId,
++      p_order_id: req.params.id,
++      p_items: normalizedItems,
++    });
++    if (mutationError) {
++      const message = mutationError.message || "Unable to update order items";
++      if (/dispatch|courier|insufficient|stock/i.test(message)) {
++        return res.status(409).json({ error: message });
++      }
++      throw mutationError;
++    }
++
++    const [{ data: updatedOrder, error: updatedOrderError }, { data: items, error: updatedItemsError }] = await Promise.all([
++      supabase.from("orders").select("*").eq("id", req.params.id).eq("org_id", orgId).single(),
++      supabase.from("order_items").select("*").eq("order_id", req.params.id).eq("org_id", orgId).order("created_at", { ascending: true }),
++    ]);
++    if (updatedOrderError) throw updatedOrderError;
++    if (updatedItemsError) throw updatedItemsError;
++    return res.json({ order: updatedOrder, items: items || [], canEditItems: true });
++  } catch (e) {
++    return res.status(500).json({ error: e.message });
++  }
++});
++
+ app.post("/api/custom-orders/webhook", async (req, res) => {
+   try {
+     const apiKey = req.headers["x-api-key"];
+     if (!apiKey) {
+       return res.status(401).json({ error: "Missing x-api-key header" });
+     }
+ 
+     const supabase = getServiceSupabase();
+     // Look up the org_id by API key in app_settings.
+     const { data: settings, error: settingsError } = await supabase
+diff --git a/src/test/order-items.test.ts b/src/test/order-items.test.ts
+index 4b441f9..d9c2a7c 100644
+--- a/src/test/order-items.test.ts
++++ b/src/test/order-items.test.ts
+@@ -215,10 +215,89 @@ describe("order item schema", () => {
+       select count(*) as preserved
+       from public.order_items
+       where org_id = '40000000-0000-0000-0000-000000000001'
+         and product_id is null
+         and variant_id is null
+         and product_name like 'Deletion %';
+     `);
+     expect(result).toMatch(/\n\s*2\s*\n/);
+   });
+ });
++
++describe("order item API contract", () => {
++  const source = readFileSync(join(root, "server/index.js"), "utf8");
++
++  it("defines an authenticated org-scoped order detail endpoint", () => {
++    const start = source.indexOf('app.get("/api/orders/:id"');
++    expect(start).toBeGreaterThan(-1);
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toContain("getToken(req)");
++    expect(route).toContain("getUser(");
++    expect(route).toContain('.eq("id", req.params.id)');
++    expect(route).toContain('.eq("org_id", orgId)');
++    expect(route).toContain("canEditItems");
++    expect(route).toContain("items");
++  });
++
++  it("defines an authenticated org-scoped item replacement endpoint", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    expect(start).toBeGreaterThan(-1);
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toContain("getToken(req)");
++    expect(route).toContain("getUser(");
++    expect(route).toContain('.eq("org_id", orgId)');
++    expect(route).toContain("req.body?.items");
++    expect(route).toContain('rpc("replace_order_items"');
++  });
++
++  it("replaces line items through one transactional RPC", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toContain("replace_order_items");
++    expect(route).not.toMatch(/\.from\("order_items"\)\s*\.delete/);
++    expect(route).not.toMatch(/\.from\("product_variants"\)\s*\.update/);
++    expect(route).not.toMatch(/\.from\("products"\)\s*\.update/);
++  });
++
++  it("rejects malformed, non-positive, and duplicate item requests", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toMatch(/Array\.isArray\(requestedItems\)/);
++    expect(route).toMatch(/quantity.*integer|Number\.isInteger/);
++    expect(route).toMatch(/quantity.*1|quantity < 1/);
++    expect(route).toMatch(/duplicate|Duplicate/i);
++  });
++
++  it("does not trust a client-supplied order total", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toContain("replace_order_items");
++    expect(route).not.toMatch(/req\.body\??\.price|req\.body\??\.total/);
++    expect(route).toContain("order");
++    expect(route).toContain("items");
++  });
++
++  it("validates catalog ownership before replacing items", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(route).toContain('from("products")');
++    expect(route).toContain('from("product_variants")');
++    expect(route).toContain('.eq("org_id", orgId)');
++  });
++
++  it("returns conflict errors for dispatched orders and insufficient stock", () => {
++    const start = source.indexOf('app.patch("/api/orders/:id/items"');
++    const route = source.slice(start, source.indexOf("\n});", start));
++    expect(source).toMatch(/sent_to_courier|courier_status|consignment_id/);
++    expect(route).toContain("409");
++    expect(route).toMatch(/insufficient stock|stock/i);
++  });
++
++  it("keeps wrong-workspace orders invisible", () => {
++    const start = source.indexOf('app.get("/api/orders/:id"');
++    const end = source.indexOf('app.patch("/api/orders/:id/items"');
++    const detail = source.slice(start, end);
++    expect(detail).toContain('.eq("id", req.params.id)');
++    expect(detail).toContain('.eq("org_id", orgId)');
++    expect(detail).toContain("404");
++  });
++});

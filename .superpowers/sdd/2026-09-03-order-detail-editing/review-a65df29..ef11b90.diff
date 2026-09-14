@@ -1,0 +1,207 @@
+# Review package: a65df29..HEAD
+
+## Commits
+ef11b90 fix: preserve order item ownership on catalog deletion
+
+## Files changed
+ .../task-1-report.md                               | 21 +++++++++++++
+ src/test/order-items.test.ts                       | 23 ++++++++++++++
+ .../migrations/20260902224522_add_order_items.sql  | 35 ++++++++++++++++++++--
+ 3 files changed, 77 insertions(+), 2 deletions(-)
+
+## Diff
+diff --git a/.superpowers/sdd/2026-09-03-order-detail-editing/task-1-report.md b/.superpowers/sdd/2026-09-03-order-detail-editing/task-1-report.md
+index 1d920ea..7fba000 100644
+--- a/.superpowers/sdd/2026-09-03-order-detail-editing/task-1-report.md
++++ b/.superpowers/sdd/2026-09-03-order-detail-editing/task-1-report.md
+@@ -69,10 +69,31 @@ The pre-existing modification in `server/index.js` was not edited or staged.
+ - `npm test -- src/test/order-items.test.ts`
+   - RED before migration fixes: 1 test failed (`prevents parent workspace changes from drifting existing items`). After exposing the odd-cent aggregate case, the aggregate test also failed against the old rounding behavior. GREEN: 6 tests passed.
+ - `npm test`
+   - Passed: 51 test files, 248 tests.
+ - `npm run lint`
+   - Passed with 0 errors and 30 existing warnings.
+ - `npm run build`
+   - Passed: Vite production build completed successfully.
+ - `npm run verify:supabase-project && npm run verify:supabase-baseline`
+   - Passed: `Supabase project preflight passed: ldiktvcavyabivpxfwpn`; `Baseline reset 1: passed`; `Baseline reset 2: passed`.
++
++## Task 1 Re-review Fix
++
++### Status
++
++FIXED
++
++### Issue
++
++The composite product and variant foreign keys used `ON DELETE SET NULL`. PostgreSQL applies that action to every column in the composite key, so deleting a catalog row attempted to set non-null `order_items.org_id` to `NULL` and fired the ownership trigger with an invalid workspace.
++
++### Fix
++
++- Removed `ON DELETE SET NULL` from the composite product and variant foreign keys, retaining composite-key enforcement to prevent cross-workspace references.
++- Added parent-side `BEFORE DELETE` triggers that clear only `order_items.product_id` or `order_items.variant_id`, scoped by the parent workspace.
++- Added a PostgreSQL regression test covering product deletion, cascading variant deletion, nullable reference clearing, and preserved item ownership.
++
++### Verification
++
++- Focused RED: the new deletion test reproduced the previous `order item order and workspace do not match` failure from the composite `SET NULL` action.
++- Focused GREEN: `npm test -- src/test/order-items.test.ts` passed 7 tests.
+diff --git a/src/test/order-items.test.ts b/src/test/order-items.test.ts
+index 5fccd08..4b441f9 100644
+--- a/src/test/order-items.test.ts
++++ b/src/test/order-items.test.ts
+@@ -108,20 +108,22 @@ beforeAll(() => {
+     create publication supabase_realtime;
+   `);
+   applyFile(baselinePath);
+   runSql(`
+     insert into public.orders (id, org_id, order_number, product, price) values
+       ('30000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '1001', '2x Mango + 3x Unknown', 10.01),
+       ('30000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000001', '1002', 'Odd legacy text', 10.01),
+       ('30000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000002', '2001', 'Other org item', 1.00);
+     insert into public.products (id, org_id, name, selling_price) values
+       ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'Mango', 5.00);
++    insert into public.product_variants (id, org_id, product_id, attributes) values
++      ('60000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', '{"size":"large"}');
+   `);
+   applyFile(migrationPath);
+ });
+ 
+ afterAll(() => {
+   const dataDirectory = join(workDirectory, "data");
+   execFileSync(pgCtl, ["-D", dataDirectory, "stop", "-m", "fast"], {
+     stdio: "pipe",
+   });
+   rmSync(workDirectory, { recursive: true, force: true });
+@@ -191,11 +193,32 @@ describe("order item schema", () => {
+ 
+   it("prevents parent workspace changes from drifting existing items", () => {
+     expect(() =>
+       runSql(`
+         update public.orders
+         set org_id = '40000000-0000-0000-0000-000000000002'
+         where id = '30000000-0000-0000-0000-000000000001';
+       `),
+     ).toThrow();
+   });
++
++  it("clears catalog references without nulling item workspace on catalog deletion", () => {
++    runSql(`
++      insert into public.order_items (org_id, order_id, product_id, product_name, unit_price, quantity)
++      values ('40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'Deletion product', 5, 1);
++      insert into public.order_items (org_id, order_id, variant_id, product_name, unit_price, quantity)
++      values ('40000000-0000-0000-0000-000000000001', '30000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'Deletion variant', 5, 1);
++      delete from public.products
++      where id = '50000000-0000-0000-0000-000000000001';
++    `);
++
++    const result = runSql(`
++      select count(*) as preserved
++      from public.order_items
++      where org_id = '40000000-0000-0000-0000-000000000001'
++        and product_id is null
++        and variant_id is null
++        and product_name like 'Deletion %';
++    `);
++    expect(result).toMatch(/\n\s*2\s*\n/);
++  });
+ });
+diff --git a/supabase/migrations/20260902224522_add_order_items.sql b/supabase/migrations/20260902224522_add_order_items.sql
+index ef5d984..9da8085 100644
+--- a/supabase/migrations/20260902224522_add_order_items.sql
++++ b/supabase/migrations/20260902224522_add_order_items.sql
+@@ -26,23 +26,23 @@ create table if not exists public.order_items (
+ alter table public.order_items
+   alter column unit_price type numeric using unit_price,
+   drop constraint if exists order_items_order_workspace_fkey,
+   drop constraint if exists order_items_product_workspace_fkey,
+   drop constraint if exists order_items_variant_workspace_fkey;
+ 
+ alter table public.order_items
+   add constraint order_items_order_workspace_fkey
+     foreign key (org_id, order_id) references public.orders(org_id, id) on delete cascade,
+   add constraint order_items_product_workspace_fkey
+-    foreign key (org_id, product_id) references public.products(org_id, id) on delete set null,
++    foreign key (org_id, product_id) references public.products(org_id, id),
+   add constraint order_items_variant_workspace_fkey
+-    foreign key (org_id, variant_id) references public.product_variants(org_id, id) on delete set null;
++    foreign key (org_id, variant_id) references public.product_variants(org_id, id);
+ 
+ create index if not exists order_items_org_order_id_idx
+ on public.order_items (org_id, order_id);
+ 
+ create index if not exists order_items_org_product_id_idx
+ on public.order_items (org_id, product_id)
+ where product_id is not null;
+ 
+ create index if not exists order_items_org_variant_id_idx
+ on public.order_items (org_id, variant_id)
+@@ -77,20 +77,50 @@ begin
+ 
+   return new;
+ end;
+ $$;
+ 
+ drop trigger if exists validate_order_items_ownership on public.order_items;
+ create trigger validate_order_items_ownership
+ before insert or update on public.order_items
+ for each row execute function public.validate_order_item_ownership();
+ 
++create or replace function public.clear_order_item_catalog_reference()
++returns trigger
++language plpgsql
++set search_path = ''
++as $$
++begin
++  if tg_argv[0] = 'product_id' then
++    update public.order_items
++    set product_id = null
++    where org_id = old.org_id and product_id = old.id;
++  elsif tg_argv[0] = 'variant_id' then
++    update public.order_items
++    set variant_id = null
++    where org_id = old.org_id and variant_id = old.id;
++  end if;
++
++  return old;
++end;
++$$;
++
++drop trigger if exists clear_order_item_product_reference on public.products;
++create trigger clear_order_item_product_reference
++before delete on public.products
++for each row execute function public.clear_order_item_catalog_reference('product_id');
++
++drop trigger if exists clear_order_item_variant_reference on public.product_variants;
++create trigger clear_order_item_variant_reference
++before delete on public.product_variants
++for each row execute function public.clear_order_item_catalog_reference('variant_id');
++
+ drop trigger if exists update_order_items_updated_at on public.order_items;
+ create trigger update_order_items_updated_at
+ before update on public.order_items
+ for each row execute function public.update_updated_at_column();
+ 
+ -- Split the legacy display text when possible, but retain every order as a
+ -- legacy item when no catalog product can be identified.
+ with order_parts as (
+   select
+     o.id as order_id,
+@@ -164,16 +194,17 @@ select
+     else base_unit_price
+   end,
+   quantity,
+   now(),
+   now()
+ from priced_parts;
+ 
+ alter table public.order_items enable row level security;
+ revoke all on public.order_items from anon, authenticated;
+ revoke execute on function public.validate_order_item_ownership() from public, anon, authenticated;
++revoke execute on function public.clear_order_item_catalog_reference() from public, anon, authenticated;
+ grant all on public.order_items to service_role;
+ grant execute on function public.validate_order_item_ownership() to service_role;
+ 
+ notify pgrst, 'reload schema';
+ 
+ commit;

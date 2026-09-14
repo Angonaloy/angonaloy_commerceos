@@ -1,0 +1,469 @@
+# Review package: 916efb2..HEAD
+
+## Commits
+b9497e2 fix: invalidate replaced order item caches
+
+## Files changed
+ .../task-2-report.md                               | 101 +++++++++++++++++++++
+ server/index.js                                    |  44 ++++++++-
+ server/productCache.js                             |   6 +-
+ src/test/order-items.test.ts                       |  64 ++++++++++---
+ src/test/productCache.test.ts                      |  12 +++
+ 5 files changed, 211 insertions(+), 16 deletions(-)
+
+## Diff
+diff --git a/.superpowers/sdd/2026-09-03-order-detail-editing/task-2-report.md b/.superpowers/sdd/2026-09-03-order-detail-editing/task-2-report.md
+new file mode 100644
+index 0000000..9519f70
+--- /dev/null
++++ b/.superpowers/sdd/2026-09-03-order-detail-editing/task-2-report.md
+@@ -0,0 +1,101 @@
++# Task 2 Report
++
++## Files
++
++- `server/index.js`: added authenticated, org-scoped order detail and item replacement endpoints. Item replacement validates identities and quantities, rejects dispatched orders, and delegates transactional stock, line-item, and aggregate updates to `replace_order_items`.
++- `src/test/order-items.test.ts`: added API contract tests for authentication, workspace isolation, validation, RPC atomicity, server-owned totals, catalog ownership, conflicts, and dispatched locking.
++
++## Commit
++
++- `a79f0d7 feat: add order item editing API`
++
++## Commands and Output
++
++- `npm test -- src/test/order-items.test.ts`: RED first, then GREEN. Final result: 1 file passed, 15 tests passed.
++- `npm test`: 51 files passed, 257 tests passed.
++- `npm run lint`: 0 errors, 30 pre-existing warnings.
++- `npm run build`: succeeded with Vite production build. Existing chunk-size warning remains.
++- `git diff --check`: passed for staged Task 2 changes.
++
++## Concerns
++
++- `supabase/migrations/20260902224522_add_order_items.sql` creates the `order_items` table but does not define `replace_order_items`. The API intentionally calls that transactional RPC as required by the task brief, so the endpoint requires that database function to be deployed before use. No migration was added because the brief limits Task 2 changes to `server/index.js` and `src/test/order-items.test.ts`.
++- The pre-existing storefront cache changes in `server/index.js` remain unstaged and were not reverted.
++
++## Review Fix
++
++### Changes
++
++- Added `supabase/migrations/20260903000100_add_order_item_edit_rpc.sql` with the deployable `public.replace_order_items(uuid, uuid, jsonb)` transaction.
++- The RPC locks the target order first, re-checks courier dispatch state under that lock, validates workspace ownership and variant/product pairing, locks all affected product and variant inventory rows, applies increase/decrease/add/remove deltas, replaces item snapshots, and recalculates `orders.quantity`, `orders.price`, and `orders.product`.
++- Any dispatch, malformed input, ownership, mismatch, or insufficient-stock exception aborts the transaction and rolls back all prior changes. Execution is revoked from `public`, `anon`, and `authenticated`, and granted to `service_role`.
++- Added UUID-shaped ID validation and server-side variant/product relationship validation to `PATCH /api/orders/:id/items`.
++- Replaced the mutation coverage gap with executable local PostgreSQL service tests for detail workspace isolation, add/increase/decrease/remove, catalog-derived totals, stock changes, insufficient-stock rollback, wrong-workspace rejection, malformed UUIDs, duplicate keys, mismatched variants, and dispatch locking.
++
++### Fix Verification
++
++- `npm test -- src/test/order-items.test.ts`: initial fix run exposed 3 test/setup defects; final result 1 file passed, 23 tests passed.
++- `npm test`: 51 files passed, 265 tests passed.
++- `npm run verify:supabase-project`: passed for `ldiktvcavyabivpxfwpn`.
++- `npm run verify:supabase-baseline`: passed twice.
++- `npm run lint`: 0 errors, 30 existing warnings.
++- `npm run build`: succeeded; existing large-chunk warning remains.
++- `git diff --check`: passed.
++- `supabase --version` / generated migration command: unavailable because the Supabase CLI is not installed locally. The migration was hand-authored as a follow-up migration and executed by the local PostgreSQL test harness.
++
++### Fix Commit
++
++- `448f2ef fix: make order item edits transactional`
++
++### Remaining Concerns
++
++- The new migration still needs to be applied to the target Supabase project through the normal deployment pipeline; no remote DDL was executed in this session.
++- Lint retains 30 pre-existing warnings and the production build retains its existing chunk-size warning.
++- Authentication and HTTP status wiring remain covered by route contract tests; mutation and isolation behavior is executed against local PostgreSQL as service tests because the repository has no HTTP test dependency or local authenticated Supabase server fixture.
++
++## Cache Invalidation Fix
++
++### Changes
++
++- After `replace_order_items` succeeds, the API purges the affected product detail and inventory cache URLs through the existing `purgeProductCache` helper.
++- Product slugs are loaded for direct product edits and variant parent products. Purging is awaited only after the RPC success branch, so failed or rolled-back mutations never invalidate storefront cache.
++- Cache purge failures are logged and do not convert a committed order edit into a failed API response.
++- Added a focused regression assertion proving purge occurs after the successful mutation path and is absent from the mutation-error path.
++- Preserved the pre-existing storefront cache ETag changes in `server/index.js` outside the fix commit.
++
++### Verification
++
++- `npm test -- src/test/order-items.test.ts`: 1 file passed, 24 tests passed.
++- `npm test`: 51 files passed, 266 tests passed.
++- `npm run lint`: 0 errors, 30 pre-existing warnings.
++- `npm run build`: succeeded; existing large-chunk warning remains.
++- `npm run verify:supabase-project`: passed for `ldiktvcavyabivpxfwpn`.
++- `npm run verify:supabase-baseline`: passed.
++- `git diff --check`: passed.
++
++### Fix Commit
++
++- `916efb2 fix: purge storefront cache after order edits`
++
++### Concerns
++
++- Cache invalidation depends on the existing Cloudflare credentials and storefront handle configuration; the helper safely skips purge when those are absent.
++- The regression is a focused route-order contract test because the repository has no HTTP test harness; the cache helper itself is covered by executable tests in `src/test/productCache.test.ts`.
++
++## Cache Union Fix
++
++### Changes
++
++- Extended the existing cache URL builder to include canonical bulk inventory URLs with the complete product ID union.
++- The order-item route now reads existing item product IDs before mutation, combines them with requested products and variant parent products, and purges removed, added, and parent-product detail caches after a successful RPC.
++- Failed RPCs return before any purge is scheduled; purge failures remain non-fatal to the committed order edit.
++- Replaced the route-order source assertion with executable purge behavior tests covering removed/added/parent detail URLs, bulk inventory URLs, and failed purge behavior.
++
++### Verification
++
++- `npm test`: 51 files passed, 268 tests passed.
++- `npm run lint`: 0 errors, 30 pre-existing warnings.
++- `npm run build`: succeeded; existing large-chunk warning remains.
++- `npm run verify:supabase-project`: passed for `ldiktvcavyabivpxfwpn`.
++- `npm run verify:supabase-baseline`: passed.
++- `git diff --check`: passed.
+diff --git a/server/index.js b/server/index.js
+index b8bb625..10e008f 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -1169,34 +1169,35 @@ async function resolveStorefrontHandle(handle) {
+ async function getStorefrontHandle(orgId) {
+   const key = `${orgId}:public_storefront_handle`;
+   const settings = await getSettings([key]);
+   return settings[key] || null;
+ }
+ 
+ // Fire-and-forget edge purge. URL-based (tag-based purge is Cloudflare
+ // Enterprise-only); Cache-Tag headers still ship so the future switch is a
+ // config change, not a code change. Failures log + drop — the outbox
+ // replay job is a separate plan.
+-async function purgeProductCache(orgId, product, { listChanged = false, warm = true } = {}) {
++async function purgeProductCache(orgId, product, { listChanged = false, warm = true, inventoryIds = [] } = {}) {
+   if (!CLOUDFLARE_ZONE_ID || !CLOUDFLARE_API_TOKEN || !PUBLIC_DOMAIN) {
+     if (process.env.NODE_ENV !== "test") {
+       console.warn("[Purge] Cloudflare not configured — skipping purge");
+     }
+     return;
+   }
+   const handle = await getStorefrontHandle(orgId);
+   const urls = buildProductCacheUrls({
+     publicDomain: PUBLIC_DOMAIN,
+     orgId,
+     handle,
+     productSlug: product?.slug,
+     listChanged,
++    inventoryIds,
+   });
+   if (!urls.length) return;
+ 
+   try {
+     const result = await purgeProductCacheUrls({
+       zoneId: CLOUDFLARE_ZONE_ID,
+       apiToken: CLOUDFLARE_API_TOKEN,
+       urls,
+       warmToken: warm ? WARM_TOKEN : "",
+     });
+@@ -5364,20 +5365,28 @@ app.patch("/api/orders/:id/items", async (req, res) => {
+       .select("*")
+       .eq("id", req.params.id)
+       .eq("org_id", orgId)
+       .maybeSingle();
+     if (orderError) throw orderError;
+     if (!order) return res.status(404).json({ error: "Order not found" });
+     if (isOrderDispatched(order)) {
+       return res.status(409).json({ error: "Order items cannot be edited after courier dispatch" });
+     }
+ 
++    const { data: existingItems, error: existingItemsError } = await supabase
++      .from("order_items")
++      .select("product_id")
++      .eq("order_id", req.params.id)
++      .eq("org_id", orgId);
++    if (existingItemsError) throw existingItemsError;
++    const existingProductIds = (existingItems || []).map((item) => item.product_id).filter(Boolean);
++
+     const productIds = [...new Set(normalizedItems.map((item) => item.productId).filter(Boolean))];
+     const variantIds = [...new Set(normalizedItems.map((item) => item.variantId).filter(Boolean))];
+     const affectedProducts = new Map();
+     if (productIds.length) {
+       const { data: products, error } = await supabase
+         .from("products")
+         .select("id, slug")
+         .in("id", productIds)
+         .eq("org_id", orgId);
+       if (error) throw error;
+@@ -5406,41 +5415,65 @@ app.patch("/api/orders/:id/items", async (req, res) => {
+         const { data: products, error: productsError } = await supabase
+           .from("products")
+           .select("id, slug")
+           .in("id", missingProductIds)
+           .eq("org_id", orgId);
+         if (productsError) throw productsError;
+         for (const product of products || []) affectedProducts.set(product.id, product);
+       }
+     }
+ 
++    const missingCacheProductIds = [...new Set(existingProductIds)].filter((id) => !affectedProducts.has(id));
++    if (missingCacheProductIds.length) {
++      const { data: products, error } = await supabase
++        .from("products")
++        .select("id, slug")
++        .in("id", missingCacheProductIds)
++        .eq("org_id", orgId);
++      if (error) throw error;
++      for (const product of products || []) affectedProducts.set(product.id, product);
++    }
++
++    const cacheInventoryIds = [...new Set([
++      ...existingProductIds,
++      ...productIds,
++      ...[...affectedProducts.keys()],
++    ])];
++
+     // The RPC locks the order and inventory rows, applies stock deltas, replaces
+     // items, and updates denormalized order totals in one database transaction.
+     const { error: mutationError } = await supabase.rpc("replace_order_items", {
+       p_org_id: orgId,
+       p_order_id: req.params.id,
+       p_items: normalizedItems,
+     });
+     if (mutationError) {
+       const message = mutationError.message || "Unable to update order items";
+       if (/dispatch|courier|insufficient|stock/i.test(message)) {
+         return res.status(409).json({ error: message });
+       }
+       throw mutationError;
+     }
+ 
+     await Promise.all(
+-      [...affectedProducts.values()].map((product) =>
++      [
++        ...[...affectedProducts.values()].map((product) =>
+         purgeProductCache(orgId, product, { listChanged: false, warm: false }).catch((error) => {
+           console.warn("[Orders] Product cache purge failed after item edit:", error.message);
+         }),
+-      ),
++        ),
++        purgeProductCache(orgId, null, {
++          listChanged: false,
++          warm: false,
++          inventoryIds: cacheInventoryIds,
++        }),
++      ],
+     );
+ 
+     const [{ data: updatedOrder, error: updatedOrderError }, { data: items, error: updatedItemsError }] = await Promise.all([
+       supabase.from("orders").select("*").eq("id", req.params.id).eq("org_id", orgId).single(),
+       supabase.from("order_items").select("*").eq("order_id", req.params.id).eq("org_id", orgId).order("created_at", { ascending: true }),
+     ]);
+     if (updatedOrderError) throw updatedOrderError;
+     if (updatedItemsError) throw updatedItemsError;
+     return res.json({ order: updatedOrder, items: items || [], canEditItems: true });
+   } catch (e) {
+@@ -8679,23 +8712,28 @@ function computeEtag(fingerprint) {
+ }
+ 
+ // Weak ETag keyed on every public field whose image or catalog updates must
+ // invalidate a browser's conditional request.
+ function catalogEtag(products) {
+   const fp = JSON.stringify(
+     products.map((product) => ({
+       id: product.id,
+       slug: product.slug,
+       price: product.price,
++      compare_at_price: product.compare_at_price,
+       image_url: product.image_url,
+       image_urls: product.image_urls,
+       images: product.images,
++      variants: product.variants?.map((variant) => ({
++        id: variant.id,
++        price: variant.price,
++      })),
+     })),
+   );
+   return computeEtag(fp);
+ }
+ 
+ function inventoryEtag(inventory) {
+   const fp = Object.entries(inventory)
+     .map(([id, e]) => `${id}:${e.stock_quantity}:${e.available}`)
+     .sort()
+     .join("|");
+diff --git a/server/productCache.js b/server/productCache.js
+index 3560f1a..be2f702 100644
+--- a/server/productCache.js
++++ b/server/productCache.js
+@@ -1,24 +1,28 @@
+ function cacheBaseUrl(publicDomain, path) {
+   return `https://${publicDomain}${path}`;
+ }
+ 
+-export function buildProductCacheUrls({ publicDomain, orgId, handle, productSlug, listChanged }) {
++export function buildProductCacheUrls({ publicDomain, orgId, handle, productSlug, listChanged, inventoryIds = [] }) {
+   const bases = [
+     handle ? { path: `/api/public/v1/${handle}`, hasProductInventory: true } : null,
+     { path: `/api/public/v1/storefronts/${orgId}`, hasProductInventory: true },
+     { path: `/api/public/storefronts/${orgId}`, hasProductInventory: false },
+   ].filter(Boolean);
+   const encodedSlug = productSlug ? encodeURIComponent(productSlug) : null;
+ 
++  const encodedInventoryIds = inventoryIds.map((id) => encodeURIComponent(id)).join(",");
+   return bases.flatMap(({ path, hasProductInventory }) => [
+     ...(listChanged ? [cacheBaseUrl(publicDomain, `${path}/products`)] : []),
++    ...(hasProductInventory && encodedInventoryIds
++      ? [cacheBaseUrl(publicDomain, `${path}/inventory?ids=${encodedInventoryIds}`)]
++      : []),
+     ...(encodedSlug ? [
+       cacheBaseUrl(publicDomain, `${path}/products/${encodedSlug}`),
+       ...(hasProductInventory ? [cacheBaseUrl(publicDomain, `${path}/products/${encodedSlug}/inventory`)] : []),
+     ] : []),
+   ]);
+ }
+ 
+ export async function purgeProductCacheUrls({ zoneId, apiToken, urls, warmToken, fetchImpl = fetch }) {
+   if (!zoneId || !apiToken || urls.length === 0) {
+     return { purged: false };
+diff --git a/src/test/order-items.test.ts b/src/test/order-items.test.ts
+index da9c4ad..c30229d 100644
+--- a/src/test/order-items.test.ts
++++ b/src/test/order-items.test.ts
+@@ -3,20 +3,21 @@ import {
+   existsSync,
+   mkdtempSync,
+   readFileSync,
+   rmSync,
+   writeFileSync,
+ } from "node:fs";
+ import { delimiter, join, resolve } from "node:path";
+ import { tmpdir } from "node:os";
+ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+ import type { Database } from "@/integrations/supabase/types";
++import { buildProductCacheUrls, purgeProductCacheUrls } from "../../server/productCache.js";
+ 
+ const root = resolve(process.cwd());
+ const baselinePath = join(
+   root,
+   "supabase/migrations/20260828000000_canonical_schema_reconciliation.sql",
+ );
+ const migrationPath = join(
+   root,
+   "supabase/migrations/20260902224522_add_order_items.sql",
+ );
+@@ -300,32 +301,71 @@ describe("order item API contract", () => {
+   });
+ 
+   it("rejects malformed catalog UUIDs and checks variant/product pairing", () => {
+     const start = source.indexOf('app.patch("/api/orders/:id/items"');
+     const route = source.slice(start, source.indexOf("\n});", start));
+     expect(route).toMatch(/UUID|uuid/i);
+     expect(route).toMatch(/variant.*product|product.*variant/i);
+     expect(route).toContain("product_id");
+   });
+ 
+-  it("invalidates affected storefront caches only after a successful mutation", () => {
+-    const start = source.indexOf('app.patch("/api/orders/:id/items"');
+-    const end = source.indexOf('app.post("/api/custom-orders/webhook"', start);
+-    const route = source.slice(start, end);
+-    const rpc = route.indexOf('supabase.rpc("replace_order_items"');
+-    const mutationError = route.indexOf("if (mutationError)", rpc);
+-    const cachePurge = route.indexOf("purgeProductCache", rpc);
+-    expect(rpc).toBeGreaterThan(-1);
+-    expect(cachePurge).toBeGreaterThan(mutationError);
+-    expect(route.slice(mutationError, cachePurge)).not.toContain("purgeProductCache");
+-    expect(route).toContain("listChanged: false");
+-    expect(route).toContain("warm: false");
++  it("purges removed and added product caches plus bulk inventory after success", async () => {
++    const productIds = ["old-product", "new-product", "parent-product"];
++    const urls = [
++      ...productIds.flatMap((productSlug) => buildProductCacheUrls({
++        publicDomain: "merchant.example",
++        orgId: "org-1",
++        handle: "mango-lover",
++        productSlug,
++        listChanged: false,
++      })),
++      ...buildProductCacheUrls({
++        publicDomain: "merchant.example",
++        orgId: "org-1",
++        handle: "mango-lover",
++        inventoryIds: productIds,
++        listChanged: false,
++      }),
++    ];
++    const requests: Array<[string, RequestInit | undefined]> = [];
++    await purgeProductCacheUrls({
++      zoneId: "zone",
++      apiToken: "token",
++      urls,
++      warmToken: "",
++      fetchImpl: async (url, options) => {
++        requests.push([String(url), options]);
++        return new Response("ok", { status: 200 });
++      },
++    });
++
++    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/products/old-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/products/new-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/products/parent-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/inventory?ids=old-product,new-product,parent-product");
++    expect(JSON.parse(String(requests[0][1]?.body)).files).toEqual(urls);
++    expect(requests).toHaveLength(1);
++  });
++
++  it("does not warm or continue purging when the cache purge fails", async () => {
++    const requests: string[] = [];
++    await expect(purgeProductCacheUrls({
++      zoneId: "zone",
++      apiToken: "token",
++      urls: ["https://merchant.example/product"],
++      warmToken: "warm",
++      fetchImpl: async (url) => {
++        requests.push(String(url));
++        return new Response("failed", { status: 500 });
++      },
++    })).rejects.toThrow("Cloudflare purge failed");
++    expect(requests).toEqual(["https://api.cloudflare.com/client/v4/zones/zone/purge_cache"]);
+   });
+ 
+   it("returns conflict errors for dispatched orders and insufficient stock", () => {
+     const start = source.indexOf('app.patch("/api/orders/:id/items"');
+     const route = source.slice(start, source.indexOf("\n});", start));
+     expect(source).toMatch(/sent_to_courier|courier_status|consignment_id/);
+     expect(route).toContain("409");
+     expect(route).toMatch(/insufficient stock|stock/i);
+   });
+ 
+diff --git a/src/test/productCache.test.ts b/src/test/productCache.test.ts
+index 7169c0a..66fbd76 100644
+--- a/src/test/productCache.test.ts
++++ b/src/test/productCache.test.ts
+@@ -33,20 +33,32 @@ describe("buildProductCacheUrls", () => {
+         productSlug: "a product/with spaces",
+         listChanged: false,
+       }),
+     ).toEqual([
+       "https://merchant.example/api/public/v1/storefronts/org-1/products/a%20product%2Fwith%20spaces",
+       "https://merchant.example/api/public/v1/storefronts/org-1/products/a%20product%2Fwith%20spaces/inventory",
+       "https://merchant.example/api/public/storefronts/org-1/products/a%20product%2Fwith%20spaces",
+     ]);
+   });
+ 
++  it("includes the bulk inventory URL for every canonical storefront path", () => {
++    expect(
++      buildProductCacheUrls({
++        publicDomain: "merchant.example",
++        orgId: "org-1",
++        handle: "mango-lover",
++        inventoryIds: ["old-product", "new/product"],
++        listChanged: false,
++      }),
++    ).toContain("https://merchant.example/api/public/v1/storefronts/org-1/inventory?ids=old-product,new%2Fproduct");
++  });
++
+   it("purges then warms every supplied URL when cache credentials are configured", async () => {
+     const requests: Array<[string, RequestInit | undefined]> = [];
+     const urls = ["https://merchant.example/catalog", "https://merchant.example/product"];
+ 
+     const result = await purgeProductCacheUrls({
+       zoneId: "zone",
+       apiToken: "token",
+       urls,
+       warmToken: "warm",
+       fetchImpl: async (url, options) => {
