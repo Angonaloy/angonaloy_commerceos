@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/base/switch/switch";
 import { DarkToast, toast } from "@/components/ui/sonner";
 import { catalogImage, variantLabel, type CatalogProduct, type CatalogVariant } from "@/lib/orderEditor";
+import { OrderSourceSelect } from "@/components/order-editor/OrderSourceSelect";
+import type { OrderSource } from "@/lib/orderSource";
 
 type Line = {
   id: string;
@@ -69,6 +71,7 @@ export default function NewOrder() {
   const [paymentMethod, setPaymentMethod] = useState("cod");
   const [notes, setNotes] = useState("");
   const [runFraudCheck, setRunFraudCheck] = useState(false);
+  const [source, setSource] = useState<OrderSource>("manual_other");
 
   const productsQuery = useQuery<ProductsResponse>({
     queryKey: ["/api/products"],
@@ -158,8 +161,12 @@ export default function NewOrder() {
   }
 
   async function createOrder() {
-    if (!customerName.trim() && !phone.trim()) {
-      toast.error("Add a customer name or phone number");
+    if (!phone.trim()) {
+      toast.error("Phone number is required");
+      return;
+    }
+    if (!customerName.trim()) {
+      toast.error("Add a customer name");
       return;
     }
     if (!address.trim()) {
@@ -196,7 +203,8 @@ export default function NewOrder() {
           notes: notes.trim() || null,
           payment_method: paymentMethod,
           discount,
-          advanced_payment: advance,
+           advanced_payment: advance,
+           source,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -245,10 +253,11 @@ export default function NewOrder() {
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-[10px] font-medium uppercase tracking-[0.16em] text-black/45">Customer name<input aria-label="Customer name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Rahim Uddin" className="mt-2 h-12 w-full rounded-lg bg-black/[0.04] px-3.5 text-[14px] normal-case tracking-normal text-black outline-none ring-1 ring-inset ring-black/[0.06] transition focus:bg-white focus:ring-black/20" /></label>
-              <label className="block text-[10px] font-medium uppercase tracking-[0.16em] text-black/45">Phone<input aria-label="Phone" type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="01712345678" className="mt-2 h-12 w-full rounded-lg bg-black/[0.04] px-3.5 text-[14px] normal-case tracking-normal text-black outline-none ring-1 ring-inset ring-black/[0.06] transition focus:bg-white focus:ring-black/20" /></label>
+              <label className="block text-[10px] font-medium uppercase tracking-[0.16em] text-black/45">Phone <span className="text-red-500">*</span><input aria-label="Phone" type="tel" required value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="01712345678" className="mt-2 h-12 w-full rounded-lg bg-black/[0.04] px-3.5 text-[14px] normal-case tracking-normal text-black outline-none ring-1 ring-inset ring-black/[0.06] transition focus:bg-white focus:ring-black/20" /></label>
               <label className="block text-[10px] font-medium uppercase tracking-[0.16em] text-black/45 sm:col-span-2">Delivery address<textarea aria-label="Delivery address" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="House 12, Road 5, Dhanmondi, Dhaka" rows={2} className="mt-2 min-h-16 w-full resize-none rounded-lg bg-black/[0.04] px-3.5 py-2.5 text-[14px] normal-case tracking-normal text-black outline-none ring-1 ring-inset ring-black/[0.06] transition focus:bg-white focus:ring-black/20" /></label>
-            </div>
-            <div className="rounded-xl bg-white p-4 ring-1 ring-inset ring-black/[0.06]">
+               <label className="block text-[10px] font-medium uppercase tracking-[0.16em] text-black/45">Order source<div className="mt-2"><OrderSourceSelect value={source} onChange={setSource} disabled={creating} /></div></label>
+             </div>
+             <div className="rounded-xl bg-white p-4 ring-1 ring-inset ring-black/[0.06]">
               <div className="flex items-center gap-2"><Sparkle weight="light" size={17} className="text-black/60" /><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-black/55">AI capture</p></div>
               <Textarea aria-label="Order message" value={orderText} onChange={(event) => setOrderText(event.target.value)} placeholder="Paste an inbox message…" className="mt-3 min-h-16 resize-none rounded-lg border-0 bg-black/[0.04] text-[13px] shadow-none placeholder:text-black/35 focus-visible:ring-1 focus-visible:ring-black/20" />
               <RichButton color="default" size="default" onClick={() => void extractOrder()} disabled={extracting || !orderText.trim()} className="mt-3 w-full">{extracting ? <Spinner size="sm" /> : <Sparkle weight="light" size={16} />}{extracting ? "Extracting…" : "Extract details"}</RichButton>
