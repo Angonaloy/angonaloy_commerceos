@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1.0] - 2026-09-15
+
+### Changed
+
+- Run Merchant Suite against the Angonaloy Supabase project with the Angonaloy deployment branding and workspace configuration.
+- Align local and hosted project metadata so the merchant dashboard, storefront documentation, and Supabase tooling target the same deployment.
+
 ## [0.1.0.4] - 2026-09-14
 
 ### Added
