@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.0.4] - 2026-09-14
+
+### Added
+
+- Let staff choose an order source when creating an order and edit it later, including after courier dispatch.
+
+### Changed
+
+- Validate canonical order sources, normalize legacy Website values, and preserve source metadata across storefront order flows.
+
 ## [0.1.0.3] - 2026-09-14
 
 ### Changed

@@ -15,7 +15,7 @@ const SOURCE_LABELS: Record<OrderSource, string> = Object.fromEntries(
 
 export function normalizeOrderSource(value: string | null | undefined): OrderSource {
   const normalized = String(value || "").trim().toLowerCase();
-  if (["custom_store", "custom_website", "custom_website_tracker", "storefront", "webhook", "website"].includes(normalized)) return "website";
+  if (["custom_store", "custom_website", "custom_website_tracker", "storefront", "storefront_review", "webhook", "website"].includes(normalized)) return "website";
   if (ORDER_SOURCE_OPTIONS.some((option) => option.value === normalized)) return normalized as OrderSource;
   return "manual_other";
 }

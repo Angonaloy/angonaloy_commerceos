@@ -28,7 +28,7 @@
 - Create `src/components/order-editor/OrderSourceSelect.tsx` — reusable controlled selector for both order pages.
 - Modify `src/pages/NewOrder.tsx` — source state, selector, and create payload.
 - Modify `src/pages/OrderDetail.tsx` — source state, dirty tracking, and source-only patch handling.
-- Modify `src/components/order-editor/CustomerPanel.tsx` — render the always-editable source control in the order metadata area.
+- Modify `src/components/order-editor/CustomerPanel.tsx` — optionally render the always-editable source control when used by Order Editor.
 - Modify `server/index.js` — source constants/validation, create and patch handling, and storefront/abandoned-checkout detection.
 - Modify `server/customers.js` — map canonical Website/Phone/Manual values into the existing customer analytics vocabulary.
 - Create `src/test/orderSource.test.ts` — pure source normalization and label tests.
@@ -219,12 +219,6 @@ In `server/index.js`, add a canonical allowlist/helper near the other order help
 ```js
 const ORDER_SOURCE_VALUES = new Set(["website", "facebook", "instagram", "whatsapp", "phone", "manual_other"]);
 
-function normalizeOrderSourceValue(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  if (["custom_store", "custom_website", "custom_website_tracker", "storefront", "webhook", "website"].includes(normalized)) return "website";
-  return ORDER_SOURCE_VALUES.has(normalized) ? normalized : "manual_other";
-}
-
 function isCanonicalOrderSource(value) {
   return typeof value === "string" && ORDER_SOURCE_VALUES.has(value.trim().toLowerCase());
 }
@@ -341,7 +335,7 @@ git commit -m "feat: add order source to create order"
 
 **Interfaces:**
 - `OrderDetail` owns `sourceDraft: OrderSource` and passes it to `CustomerPanel`.
-- `CustomerPanel` receives `source`, `onSourceChange`, and `sourceDisabled` independently of customer/cart editing.
+- `CustomerPanel` optionally receives `source`, `onSourceChange`, and `sourceDisabled`, independently of customer/cart editing; abandoned checkout usage does not render the control.
 - A source-only save sends `{ source: "..." }` through `PATCH /api/orders/:id`.
 
 - [ ] **Step 1: Write failing Order Editor tests**
@@ -396,19 +390,19 @@ Compute `sourceChanged = sourceDraft !== normalizeOrderSource(order?.source)` an
 
 - [ ] **Step 4: Add the selector to CustomerPanel**
 
-Extend `CustomerPanelProps` with:
+Extend `CustomerPanelProps` with optional source props:
 
 ```ts
-source: OrderSource;
-onSourceChange: (source: OrderSource) => void;
+source?: OrderSource;
+onSourceChange?: (source: OrderSource) => void;
 sourceDisabled?: boolean;
 ```
 
-Render `OrderSourceSelect` in the Customer and order metadata section outside the customer-only edit toggle, so it remains interactive while customer/cart editing is locked. Pass `sourceDisabled={saving}` from OrderDetail, not `canEditCart`.
+Render `OrderSourceSelect` only when both `source` and `onSourceChange` are provided, outside the customer-only edit toggle, so it remains interactive while customer/cart editing is locked. Pass `sourceDisabled={saving}` from OrderDetail, not `canEditCart`; leave AbandonedDetail unchanged.
 
 - [ ] **Step 5: Wire OrderDetail to CustomerPanel**
 
-Pass `source={sourceDraft}`, `onSourceChange={setSourceDraft}`, and `sourceDisabled={saving}` to `CustomerPanel`. Ensure any direct CustomerPanel call sites/tests receive the new required source props or sensible defaults where they render the component directly.
+Pass `source={sourceDraft}`, `onSourceChange={setSourceDraft}`, and `sourceDisabled={saving}` to `CustomerPanel`. Because the source props are optional, direct AbandonedDetail and CustomerPanel test call sites remain unchanged and do not render an Order Source field.
 
 - [ ] **Step 6: Run the focused tests and confirm they pass**
 
