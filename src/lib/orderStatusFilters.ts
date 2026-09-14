@@ -104,16 +104,18 @@ export function classifyOrderStatus(order: StatusFilterOrder): OperationalOrderS
   const business = normalizeStatus(order.status);
   const fulfillment = normalizeStatus(order.fulfillment_status);
   const courier = normalizeStatus(order.courier_status);
+  const isExplicitSteadfastOrder = order.courier_name === "steadfast" && order.sent_to_courier === true;
 
   if ([business, fulfillment, courier].some(isCancelledState)) return "cancelled";
   if ([business, fulfillment, courier].some((value) => DELIVERED_STATES.has(value))) return "delivered";
   if (isSteadfastOrder(order)) {
+    if (isExplicitSteadfastOrder && business === "print") return "print";
     if (business === "flagged" || STEADFAST_FLAGGED_STATES.has(courier) || isFraudFlagged(order)) {
       return "flagged";
     }
     if ([business, fulfillment, courier].some((value) => HOLD_STATES.has(value))) return "on_hold";
     if (isSteadfastTransitStatus(courier)) return "in_transit";
-    if (business === "processing" || business === "print" || isSteadfastProcessingStatus(courier)) {
+    if (business === "processing" || isSteadfastProcessingStatus(courier)) {
       return "processing";
     }
   }
