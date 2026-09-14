@@ -163,14 +163,30 @@ describe("OrderDetail", () => {
 
   it("keeps the order source editable after courier dispatch", async () => {
     const dispatchedDetail = { ...detail, canEditItems: false, order: { ...order, sent_to_courier: true, source: "website" } };
-    apiFetch.mockImplementation(async (url: string) => {
+    apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/orders/order-1" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        return response({ ...dispatchedDetail, order: { ...dispatchedDetail.order, source: body.source } });
+      }
       if (url === "/api/orders/order-1") return response(dispatchedDetail);
       if (url === "/api/products") return response(products);
       throw new Error(`Unexpected API request: ${url}`);
     });
     renderPage();
 
-    expect(await screen.findByLabelText("Order source")).not.toBeDisabled();
+    const user = userEvent.setup();
+    const source = await screen.findByLabelText("Order source");
+    expect(source).not.toBeDisabled();
+    await user.click(source);
+    await user.click(await screen.findByRole("option", { name: "Phone" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      const patch = apiFetch.mock.calls.find(([url, init]) => url === "/api/orders/order-1" && init?.method === "PATCH");
+      expect(patch).toBeDefined();
+      expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ source: "phone" });
+    });
+    expect(apiFetch.mock.calls.some(([url]) => String(url).includes("/items"))).toBe(false);
   });
 
   it("keeps the editor toolbar visible and limits inner scrolling to the catalog list", async () => {

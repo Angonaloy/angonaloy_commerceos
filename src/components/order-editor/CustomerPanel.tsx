@@ -36,7 +36,6 @@ type CustomerOrder = {
   fraud_data?: { risk_level?: string } | null;
   created_at?: string | null;
   updated_at?: string | null;
-  source?: string | null;
 };
 
 type CustomerPanelProps = {

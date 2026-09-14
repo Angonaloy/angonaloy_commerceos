@@ -20,6 +20,7 @@ describe("order source", () => {
   it("normalizes legacy and missing values", () => {
     expect(normalizeOrderSource("custom_store")).toBe("website");
     expect(normalizeOrderSource("custom_website_tracker")).toBe("website");
+    expect(normalizeOrderSource("storefront_review")).toBe("website");
     expect(normalizeOrderSource(null)).toBe("manual_other");
     expect(normalizeOrderSource("unknown")).toBe("manual_other");
   });
