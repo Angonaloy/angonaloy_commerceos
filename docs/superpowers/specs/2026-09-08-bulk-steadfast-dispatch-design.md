@@ -45,7 +45,7 @@ Add an authenticated route in `server/index.js` for the dashboard bulk action: `
 
 The route must:
 
-- Resolve the current user and fixed Mango Lover BD `orgId`; never accept an organization id from the client.
+- Resolve the current user and fixed Angonaloy `orgId`; never accept an organization id from the client.
 - Validate a non-empty `orderIds` array with at most 500 entries.
 - Load orders using both `.in("id", orderIds)` and `.eq("org_id", orgId)`.
 - Treat missing IDs, non-Print orders, and already-dispatched orders as local failures without sending them to Steadfast.

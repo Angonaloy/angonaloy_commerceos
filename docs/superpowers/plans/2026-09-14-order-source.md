@@ -13,7 +13,7 @@
 - Store only `website`, `facebook`, `instagram`, `whatsapp`, `phone`, or `manual_other` for the new source contract.
 - Display `manual_other` as `Manual / Other`.
 - Use `apiFetch()` for every authenticated frontend API call.
-- Preserve the authenticated Mango Lover BD `org_id` guard on every order query and mutation.
+- Preserve the authenticated Angonaloy `org_id` guard on every order query and mutation.
 - Keep Order Source editable after courier dispatch; do not couple it to cart editability.
 - Courier webhooks and sync paths must not overwrite `orders.source`.
 - No database schema migration is needed; `public.orders.source` already exists.

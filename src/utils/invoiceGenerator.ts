@@ -195,7 +195,7 @@ const invoicePage = (order: InvoiceOrder, businessName: string) => {
             <div class="invoice-notes">
               <span class="section-label">ORDER NOTE</span>
               <div>${notes ? escapeHtml(notes) : "No additional instructions."}</div>
-              <strong>Thank you for choosing Mango Lover.</strong>
+              <strong>Thank you for choosing Angonaloy.</strong>
             </div>
             <div class="totals">
               <div><span>Subtotal</span><strong>${formatMoney(subtotal)}</strong></div>
@@ -211,7 +211,7 @@ const invoicePage = (order: InvoiceOrder, businessName: string) => {
 
 export function buildInvoiceHtml(
   orders: InvoiceOrder[],
-  businessName = "Mango Lover BD",
+  businessName = "Angonaloy",
 ) {
   const pages = orders.map((order) => invoicePage(order, businessName)).join("");
 

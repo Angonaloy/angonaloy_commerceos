@@ -1,4 +1,4 @@
--- Canonical schema reconciliation for the single Mango Lover BD deployment.
+-- Canonical schema reconciliation for the single Angonaloy deployment.
 --
 -- The target project was provisioned before this repository baseline was ready.
 -- Every operation therefore preserves existing Auth users, workspace roles,

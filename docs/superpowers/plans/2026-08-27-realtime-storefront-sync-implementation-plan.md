@@ -7,7 +7,7 @@ Related design: `docs/superpowers/specs/2026-08-27-realtime-storefront-sync-desi
 
 ## Outcome
 
-Merchant changes to products, prices, variants, publication state, images, branding, and stock become visible on the separately deployed Vercel storefront within one to three seconds, including on already-open pages. Storefront source-code and design changes still deploy from the separate GitHub repository. Runtime commerce data stays in the single Mango Lover BD Supabase project.
+Merchant changes to products, prices, variants, publication state, images, branding, and stock become visible on the separately deployed Vercel storefront within one to three seconds, including on already-open pages. Storefront source-code and design changes still deploy from the separate GitHub repository. Runtime commerce data stays in the single Angonaloy Supabase project.
 
 ## Locked decisions
 
@@ -19,7 +19,7 @@ Merchant changes to products, prices, variants, publication state, images, brand
 6. Snapshot-consistent revisioned API reads plus authoritative version checks are the correctness mechanism. V1 does not require cache invalidation or an invalidation outbox.
 7. Stock has one authoritative database value and checkout changes stock and creates the order in one database transaction.
 8. Supabase Postgres Changes is acceptable for this single-row, single-storefront notification feed. Version checks on focus, reconnect, online events, and bounded polling recover missed events.
-9. The canonical database was pre-provisioned with one Mango Lover BD admin/workspace and non-secret settings before the baseline was ready. Preserve that bootstrap state, reconcile it non-destructively, and do not transfer or dual-write data from the older project.
+9. The canonical database was pre-provisioned with one Angonaloy admin/workspace and non-secret settings before the baseline was ready. Preserve that bootstrap state, reconcile it non-destructively, and do not transfer or dual-write data from the older project.
 10. The older Supabase project remains untouched and read-only as a temporary rollback reference until the new production launch is accepted.
 11. The production storefront handle is immutable after first launch. Renaming requires an explicit alias-backed migration and coordinated Vercel deployment.
 12. Backend changes deploy backward compatibly before the storefront. Strict revision and checkout-idempotency requirements activate through server-side feature flags only after the updated storefront passes production verification.
@@ -32,7 +32,7 @@ Dashboard
    │ authenticated apiFetch()
    ▼
 Merchant-Suite Vercel Function
-   │ resolve user + fixed Mango Lover BD org_id
+   │ resolve user + fixed Angonaloy org_id
    ▼
 Supabase transaction
    ├── mutate product / image / variant / stock / settings
@@ -90,7 +90,7 @@ Atomic Postgres RPC (service_role only, SECURITY INVOKER)
 
 - Inventory every table, enum, constraint, index, RLS policy, storage bucket/policy, function, trigger, and publication required by the current application.
 - Replace reliance on cold-start DDL in `server/index.js` and `scripts/seed-storefront.mjs` with a deterministic baseline that succeeds on an empty local Supabase database.
-- Preserve the fixed `org_id` columns and guards for compatibility, but create only the one Mango Lover BD workspace during an explicit seed/bootstrap step.
+- Preserve the fixed `org_id` columns and guards for compatibility, but create only the one Angonaloy workspace during an explicit seed/bootstrap step.
 - Treat the old repository migration directory as legacy input. Build and test one canonical reconciliation that succeeds both on an empty local database and on the already-provisioned target without deleting its admin/settings bootstrap state; do not blindly replay unverified legacy migrations.
 - Make all policies and grants explicit. Revoke default function execution where appropriate.
 - Add SQL assertions that fail if anonymous/authenticated roles can access commerce tables or execute privileged functions.
@@ -106,7 +106,7 @@ Atomic Postgres RPC (service_role only, SECURITY INVOKER)
 
 ### 0.4 Bootstrap the single production workspace explicitly
 
-- Create the Mango Lover BD administrator through Supabase Auth using a one-time operator workflow; never seed a password in SQL or source control.
+- Create the Angonaloy administrator through Supabase Auth using a one-time operator workflow; never seed a password in SQL or source control.
 - Insert the fixed `user_roles` admin/workspace association only after the Auth user exists.
 - Create the one storefront handle and sync-state row.
 - Mark the handle locked after the first verified production storefront deployment.
@@ -169,7 +169,7 @@ Add a typed Postgres function accepting the fixed workspace, normalized customer
 
 1. validate positive bounded quantities and reject duplicate line IDs or normalize them deterministically;
 2. lock inventory rows in sorted ID order to reduce deadlock risk;
-3. ensure every row belongs to the resolved Mango Lover BD workspace and every product is published;
+3. ensure every row belongs to the resolved Angonaloy workspace and every product is published;
 4. calculate current prices from product/variant rows and shipping from the selected zone in the current `storefront_settings.shipping_zones` snapshot rather than trusting client totals;
 5. allocate the next `#S...` order number through a database counter in the same transaction;
 6. claim an idempotency record uniquely scoped by workspace and high-entropy key;
@@ -390,7 +390,7 @@ Lane A and Lane B both touch `server/index.js` and migrations, so use separate c
 
 ## NOT in scope
 
-- Multi-tenant SaaS behavior: this deployment remains the single Mango Lover BD workspace.
+- Multi-tenant SaaS behavior: this deployment remains the single Angonaloy workspace.
 - Automatic migration or synchronization from `hcsijvsfvwiozfruogzt`: explicitly declined for the clean canonical bootstrap.
 - Dual writes between old and new Supabase projects: they create split-brain order and inventory risk.
 - Direct storefront writes to Supabase commerce tables: all checkout and merchant mutations remain server-mediated.

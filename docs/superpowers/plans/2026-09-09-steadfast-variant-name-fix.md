@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Preserve the Mango Lover BD workspace guard on all database queries.
+- Preserve the Angonaloy workspace guard on all database queries.
 - Keep frontend API calls behind `apiFetch()`; no frontend changes are needed.
 - Keep `normalizeBdPhone()` before courier calls.
 - Do not change the Steadfast API endpoint, authentication headers, or payload contract.

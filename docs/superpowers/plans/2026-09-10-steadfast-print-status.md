@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Preserve authentication and the fixed Mango Lover BD `org_id` guard on all server queries.
+- Preserve authentication and the fixed Angonaloy `org_id` guard on all server queries.
 - Use the existing `apiFetch()` frontend API boundary; no new API calls are needed.
 - Do not add a database migration.
 - Leave Pathao dispatch behavior unchanged.

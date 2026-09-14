@@ -2,7 +2,7 @@
 
 ## Goal
 
-Replace the Dashboard order table's current invoice-style Print output with a compact shipping sticker that matches Mango Lover BD's parcel-label workflow. Keep the downloadable Invoice PDF and Inbox Orders printing unchanged.
+Replace the Dashboard order table's current invoice-style Print output with a compact shipping sticker that matches Angonaloy's parcel-label workflow. Keep the downloadable Invoice PDF and Inbox Orders printing unchanged.
 
 ## Print Format
 

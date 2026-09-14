@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Preserve the authenticated /orders/:id route and fixed Mango Lover BD org_id guard.
+- Preserve the authenticated /orders/:id route and fixed Angonaloy org_id guard.
 - Use apiFetch() for every frontend API request.
 - Preserve inventory validation and courier-dispatch locking.
 - Fixed discounts are taka off each unit; percentages must be between 0 and 100.
@@ -354,7 +354,7 @@ Critical silent gaps: 0.
 - Existing authenticated order PATCH is reused for customer fields.
 - Existing `replace_order_items` RPC is extended rather than replaced with client-side writes.
 - Existing `apiFetch()`, TanStack Query cache, React Router route, product catalog API, cache purge flow, and Radix popover primitives are reused.
-- Existing fixed Mango Lover BD `org_id` guards remain on order, item, product, variant, and image queries.
+- Existing fixed Angonaloy `org_id` guards remain on order, item, product, variant, and image queries.
 
 ### NOT in Scope
 

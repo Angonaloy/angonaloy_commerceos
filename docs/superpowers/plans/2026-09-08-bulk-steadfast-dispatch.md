@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Use `apiFetch()` for every frontend API call.
-- Every server order/order-item query must filter by the resolved Mango Lover BD `org_id`.
+- Every server order/order-item query must filter by the resolved Angonaloy `org_id`.
 - Every new server endpoint must authenticate with `getToken(req)` and `getUser(token)`.
 - Normalize Bangladeshi phone numbers with `normalizeBdPhone()` before sending to Steadfast.
 - Use Steadfast `POST https://portal.packzy.com/api/v1/create_order/bulk-order` with a JSON-encoded `data` array and no more than 500 orders.

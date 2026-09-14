@@ -17,7 +17,7 @@ vi.mock("@/hooks/useLiveVisitors", () => ({
   useLiveVisitors: () => ({ count: 0, details: { activeCarts: 0, checkingOut: 0, purchased: 0 } }),
 }));
 vi.mock("@/hooks/useMe", () => ({
-  useMe: () => ({ data: { orgName: "Mango Lover BD" }, isLoading: false }),
+  useMe: () => ({ data: { orgName: "Angonaloy" }, isLoading: false }),
 }));
 vi.mock("@/hooks/useWarehouses", () => ({
   useWarehouses: () => ({ warehouses: [{ id: "main", name: "Main Warehouse" }] }),

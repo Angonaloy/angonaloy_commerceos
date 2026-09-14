@@ -13,7 +13,7 @@ import { buildLegacyOrderItems } from "../../server/orderItemParsing.js";
 const { apiFetch } = vi.hoisted(() => ({ apiFetch: vi.fn() }));
 vi.mock("@/lib/api", () => ({ apiFetch }));
 vi.mock("@/hooks/useMe", () => ({
-  useMe: () => ({ data: { orgName: "Mango Lover BD" }, isLoading: false }),
+  useMe: () => ({ data: { orgName: "Angonaloy" }, isLoading: false }),
 }));
 
 const order = {

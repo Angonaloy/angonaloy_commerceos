@@ -11,7 +11,7 @@ Use the existing org-scoped `app_settings` key-value store with two new keys:
 - `bulksms_confirmation_enabled`
 - `bulksms_dispatch_enabled`
 
-The settings API already accepts the Bulk SMS settings payload, so no database migration is required. A missing per-template key is interpreted as enabled. This preserves current behavior for existing Mango Lover BD settings until the user explicitly turns a message type off.
+The settings API already accepts the Bulk SMS settings payload, so no database migration is required. A missing per-template key is interpreted as enabled. This preserves current behavior for existing Angonaloy settings until the user explicitly turns a message type off.
 
 ## UI
 

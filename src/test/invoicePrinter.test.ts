@@ -34,7 +34,7 @@ function makeOrder(overrides: Partial<InvoiceOrder> = {}): InvoiceOrder {
 
 describe("A4 invoice HTML", () => {
   it("renders the complete Bold Shipping invoice from structured order data", () => {
-    const html = buildInvoiceHtml([makeOrder()], "Mango Lover BD");
+    const html = buildInvoiceHtml([makeOrder()], "Angonaloy");
 
     expect(html).toContain("@page { size: A4 portrait; margin: 0; }");
     expect(html).toContain("width: 210mm;");

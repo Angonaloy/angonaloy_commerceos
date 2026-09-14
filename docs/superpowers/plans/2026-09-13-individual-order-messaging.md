@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Use `apiFetch()` for the frontend SMS request.
-- Every backend order query must resolve and filter by the fixed Mango Lover BD `org_id`.
+- Every backend order query must resolve and filter by the fixed Angonaloy `org_id`.
 - The backend must use the saved order phone; never accept a client-supplied recipient phone or organization id.
 - Normalize Bangladesh phone numbers before sending SMS or creating WhatsApp URLs.
 - Do not change automated confirmation or dispatch SMS triggers.
@@ -104,7 +104,7 @@ git commit -m "feat: add Bangladesh phone helpers"
 
 **Interfaces:**
 - Produces `POST /api/orders/:id/send-sms` with request body `{ message: string }`.
-- The route loads `orders` by `id` and the authenticated Mango Lover BD `org_id`, then sends only to the stored `order.phone`.
+- The route loads `orders` by `id` and the authenticated Angonaloy `org_id`, then sends only to the stored `order.phone`.
 - The route returns `401`, `404`, `422`, `409`, `502`, or `200` according to the approved design.
 - Shared gateway submission must preserve Bulk SMS BD's accepted `response_code === 202` check and `880...` recipient format used by automatic SMS.
 

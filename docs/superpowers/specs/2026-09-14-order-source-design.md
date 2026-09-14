@@ -68,7 +68,7 @@ The source update is independent from status, courier, customer, cart, discount,
 4. The Order Editor reads the source returned by `GET /api/orders/:id`, normalizes legacy values, and sends changes through the authenticated `PATCH /api/orders/:id` route.
 5. The patch route permits source edits with the existing workspace guard and does not couple source changes to courier or cart state.
 
-All order reads and writes continue to use the resolved Mango Lover BD `org_id`. No public client receives direct database write access.
+All order reads and writes continue to use the resolved Angonaloy `org_id`. No public client receives direct database write access.
 
 ## Error handling
 

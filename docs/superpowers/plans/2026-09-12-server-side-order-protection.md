@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Keep all new commerce reads and checkout behind `/api/public/v1/:handle/...`; the storefront must not write directly to Supabase commerce tables.
-- Preserve the fixed Mango Lover BD workspace guard and `.eq("org_id", orgId)` on every user-data query; never accept `org_id` from a browser request.
+- Preserve the fixed Angonaloy workspace guard and `.eq("org_id", orgId)` on every user-data query; never accept `org_id` from a browser request.
 - Authenticate the custom webhook with its existing `x-api-key` before protection checks; resolve the workspace from the key or storefront handle on the server.
 - Never trust browser-provided price, order number, score, decision, device identity, or organization ID.
 - Run `normalizeBdPhone()` before phone comparison or any external phone operation.
@@ -22,7 +22,7 @@
 - Address validation uses dedicated configuration `ADDRESS_VALIDATION_MODEL=gpt-4o-mini` and `ADDRESS_VALIDATION_PROVIDER=openai`; existing Order Chat/social AI configuration remains unchanged.
 - Do not apply a remote Supabase migration, change production credentials, deploy, or create a real order during implementation.
 - Use test-first development for each new behavior, run the repository’s existing checks, and inspect the complete diff before shipping.
-- The Merchant Suite plan is stored in this repository. Storefront changes belong in a separate branch/worktree of `mangoloverbd/mangoloverbd_storefront`.
+- The Merchant Suite plan is stored in this repository. Storefront changes belong in a separate branch/worktree of `Angonaloy/angonaloy_storefront`.
 
 ## Current File Map Revalidated Against Main
 
@@ -362,7 +362,7 @@ Storefront:
 
 - [ ] **Step 1: Write failing API and UI tests.**
 
-  Test that unauthenticated requests return `401`, authenticated requests resolve the current user’s Mango Lover BD org rather than accepting a query/body org, and every list/get/update query includes the org guard. Test allowed status transitions `on_hold -> approved|rejected`, rejection of repeated transitions, stale-stock approval returning `409` while keeping the review on hold, and successful approval creating exactly one normal order and decrementing stock exactly once.
+  Test that unauthenticated requests return `401`, authenticated requests resolve the current user’s Angonaloy org rather than accepting a query/body org, and every list/get/update query includes the org guard. Test allowed status transitions `on_hold -> approved|rejected`, rejection of repeated transitions, stale-stock approval returning `409` while keeping the review on hold, and successful approval creating exactly one normal order and decrementing stock exactly once.
 
   Test the page renders score, decision, reason codes, cart, customer contact, age, and status; shows approve/reject controls only for `on_hold`; and renders generic API errors without leaking internal reason text to a customer-facing surface.
 
@@ -392,7 +392,7 @@ Storefront:
 
 ## Task 6: Move Storefront Checkout to the Versioned Contract
 
-**Repository:** `mangoloverbd/mangoloverbd_storefront` on a branch based on its current `main` (`53895b6`).
+**Repository:** `Angonaloy/angonaloy_storefront` on a branch based on its current `main` (`53895b6`).
 
 **Files:**
 - Modify: `api/orders.ts:1-310`
@@ -442,7 +442,7 @@ Storefront:
 
 ## Task 7: Add Challenge, Timing, Honeypot, and Review UX to All Four Checkouts
 
-**Repository:** `mangoloverbd/mangoloverbd_storefront` on the same feature branch as Task 6.
+**Repository:** `Angonaloy/angonaloy_storefront` on the same feature branch as Task 6.
 
 **Files:**
 - Create: `client/src/lib/order-protection.ts`

@@ -7,7 +7,7 @@ Status: Approved by user
 
 ## Goal
 
-Connect the e-commerce storefront repo (github.com/mangoloverbd/mangoloverbd_storefront, originally forked from `noorkarimmehedi/e-commerce` and deployed at stepprsbangladesh.vercel.app) to this Merchant Suite (Commerce-os, Supabase `alupmlvmrtrfshnmpfig`) as a **single-storefront, single-tenant** pair. No visual/design changes to the storefront. Product pages are created from the suite's catalog.
+Connect the e-commerce storefront repo (github.com/Angonaloy/angonaloy_storefront, originally forked from `noorkarimmehedi/e-commerce` and deployed at stepprsbangladesh.vercel.app) to this Merchant Suite (Commerce-os, Supabase `alupmlvmrtrfshnmpfig`) as a **single-storefront, single-tenant** pair. No visual/design changes to the storefront. Product pages are created from the suite's catalog.
 
 ## Context
 

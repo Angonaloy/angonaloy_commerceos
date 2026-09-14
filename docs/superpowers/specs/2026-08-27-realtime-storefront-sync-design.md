@@ -5,13 +5,13 @@ Status: Approved; engineering-reviewed implementation plan written
 
 ## Goal
 
-Make Mango Lover BD product, price, image, publication, variant, and stock changes appear on the separately deployed storefront within one to three seconds, including on already-open pages, without rebuilding or redeploying the storefront.
+Make Angonaloy product, price, image, publication, variant, and stock changes appear on the separately deployed storefront within one to three seconds, including on already-open pages, without rebuilding or redeploying the storefront.
 
 ## System boundary
 
 This is one merchant, one fixed workspace, one Supabase project, and one intended storefront. Merchant-Suite and the storefront remain separate GitHub repositories and separate Vercel projects.
 
-The canonical Supabase project `ldiktvcavyabivpxfwpn` was initially selected as a greenfield launch target, and no data is copied automatically from `hcsijvsfvwiozfruogzt`. A 2026-08-28 read-only audit found that the canonical project had already been provisioned with the application tables, one Mango Lover BD admin/workspace role, and non-secret usage/settings rows. Those rows are now treated as intentional bootstrap state: schema rollout must preserve them and reconcile the existing database non-destructively. The older project remains untouched and read-only as a temporary rollback reference; there is no dual-write period.
+The canonical Supabase project `ldiktvcavyabivpxfwpn` was initially selected as a greenfield launch target, and no data is copied automatically from `hcsijvsfvwiozfruogzt`. A 2026-08-28 read-only audit found that the canonical project had already been provisioned with the application tables, one Angonaloy admin/workspace role, and non-secret usage/settings rows. Those rows are now treated as intentional bootstrap state: schema rollout must preserve them and reconcile the existing database non-destructively. The older project remains untouched and read-only as a temporary rollback reference; there is no dual-write period.
 
 The production storefront handle is immutable after launch because it anchors public API URLs, Vercel configuration, Realtime filtering, and client query keys. A future rename is a coordinated migration: reserve the new handle, preserve the old handle as a temporary alias, update Vercel environment configuration, deploy and verify both applications, then retire the alias after the agreed compatibility window.
 
@@ -19,10 +19,10 @@ The production storefront handle is immutable after launch because it anchors pu
 |---|---|
 | Storefront components, layouts, CSS, application logic | Storefront GitHub repo; Vercel build and deployment |
 | Fixed code assets | Storefront GitHub repo |
-| Products, prices, descriptions, publication state | Mango Lover BD Supabase database |
-| Variants and authoritative stock | Mango Lover BD Supabase database |
-| Product images and merchant-editable brand media | Mango Lover BD Supabase Storage |
-| Storefront branding, shipping, customers, orders | Mango Lover BD Supabase database |
+| Products, prices, descriptions, publication state | Angonaloy Supabase database |
+| Variants and authoritative stock | Angonaloy Supabase database |
+| Product images and merchant-editable brand media | Angonaloy Supabase Storage |
+| Storefront branding, shipping, customers, orders | Angonaloy Supabase database |
 | Public commerce reads and checkout | Versioned Merchant-Suite API |
 | Live invalidation signal | Read-only Supabase Realtime revision state |
 | Catalog/API acceleration and responsive images | Vercel CDN and Image Optimization |
@@ -40,11 +40,11 @@ The storefront receives only browser-safe configuration:
 
 The Supabase browser client is notification-only. It may select and subscribe to the safe storefront revision row; it receives no direct read or write privileges on `products`, `product_images`, `product_variants`, `orders`, customers, or settings. The Supabase service-role/secret key remains server-only.
 
-All catalog, inventory, configuration, and checkout operations use `/api/public/v1/:handle/...`. Authenticated mutations use Merchant-Suite endpoints and resolve the fixed Mango Lover BD workspace on the server. Public clients never choose an `org_id`.
+All catalog, inventory, configuration, and checkout operations use `/api/public/v1/:handle/...`. Authenticated mutations use Merchant-Suite endpoints and resolve the fixed Angonaloy workspace on the server. Public clients never choose an `org_id`.
 
 ## Revision model
 
-Add a narrowly scoped `storefront_sync_state` table with one row for the Mango Lover BD workspace:
+Add a narrowly scoped `storefront_sync_state` table with one row for the Angonaloy workspace:
 
 - `org_id` primary key
 - `catalog_revision` monotonically increasing bigint
@@ -182,7 +182,7 @@ Merchant-Suite emits structured Vercel logs with a generated/request-propagated 
 1. Keep `ldiktvcavyabivpxfwpn` as the canonical project and reconcile it with a reviewed, data-preserving migration. Do not transfer data automatically from the older project.
 2. Validate schema and destructive tests in a local Supabase instance or isolated Supabase branch, never against the future production database.
 3. Add revision schema, RLS, grants, triggers, snapshot-consistent read functions, and tests in a reviewed migration.
-4. Bootstrap the Mango Lover BD admin/workspace, then enter required branding, shipping, integrations, products, variants, images, and opening stock explicitly.
+4. Bootstrap the Angonaloy admin/workspace, then enter required branding, shipping, integrations, products, variants, images, and opening stock explicitly.
 5. Add revisioned API/cache behavior and atomic checkout.
 6. Update storefront integration and Realtime handling in the separate repository.
 7. Configure Vercel image optimization and environment variables.
