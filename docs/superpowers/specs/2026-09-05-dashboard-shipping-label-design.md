@@ -15,7 +15,7 @@ Replace the Dashboard order table's current invoice-style Print output with a co
 
 Each label contains:
 
-1. The Mango Lover logo, sourced from `imgi_67_mango-lover-desktop-header-footer-img-700x137.avif` and rendered in monochrome.
+1. The Angonaloy logo, sourced from the supplied header/footer artwork and rendered in monochrome.
 2. A scannable Code 128 barcode.
 3. A prominent CN value.
 4. Order number and customer name.
@@ -65,7 +65,7 @@ Legacy orders without structured order items fall back to the existing product d
 - Keep the current hidden-iframe browser print mechanism.
 - Leave the print document title blank and retain zero page margins to minimize browser-added headers and footers. Browsers may still require the operator to disable their Headers and footers print setting because web code cannot override it.
 - Generate the barcode locally in the browser; no third-party barcode service or network request is used.
-- Add the supplied Mango Lover logo as a repository asset in a browser-compatible format.
+- Add the supplied Angonaloy logo as a repository asset in a browser-compatible format.
 
 ## Testing
 

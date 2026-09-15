@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-04
 **Status:** Approved
-**Context:** The default "Mango Lover" warehouse lists all 4 catalog products as
+**Context:** The default "Angonaloy" warehouse lists all 4 catalog products as
 "Default fallback" (`warehouse_id IS NULL`) with a "Managed by default" label and
 no Remove action. Product assignment currently only exists on the Products page
 (bulk select → Assign warehouse dropdown). This spec adds assignment directly on

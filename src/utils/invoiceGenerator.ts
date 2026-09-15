@@ -149,7 +149,7 @@ const invoicePage = (order: InvoiceOrder, businessName: string) => {
         <section class="invoice-page">
           <header class="invoice-header">
             <div class="brand-block">
-              <img src="/mango-lover-print-logo.png" alt="${escapeHtml(businessName)}" />
+              <img src="/angonaloy-print-logo.png" alt="${escapeHtml(businessName)}" />
               <span>PREMIUM FOODS</span>
             </div>
             <div class="invoice-heading">

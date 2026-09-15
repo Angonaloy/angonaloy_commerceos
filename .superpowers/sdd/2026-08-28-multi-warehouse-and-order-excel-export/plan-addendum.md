@@ -10,7 +10,7 @@ This addendum overrides the implementation plan only where the audit found a cor
 - Add nullable `warehouse_id` columns and composite foreign keys `(org_id, warehouse_id) references warehouses (org_id, id)` on `products`, `orders`, and `social_inbox_orders`.
 - Enable RLS, revoke anon/authenticated table privileges, grant service_role table privileges, and issue `notify pgrst, 'reload schema'` for the new table.
 - Add a `public.set_default_warehouse(p_org_id uuid, p_warehouse_id uuid)` PL/pgSQL function. It locks that org's warehouse rows with `FOR UPDATE`, rejects a missing/deleted warehouse, clears the old default, sets the requested default, uses a fixed search path, revokes PUBLIC/anon/authenticated execute, and grants execute only to service_role.
-- Seed and repair exactly one active default warehouse per `user_roles.org_id`, preferring the active `Mango Lover` row. Do not rely only on `on conflict do nothing`.
+- Seed and repair exactly one active default warehouse per `user_roles.org_id`, preferring the active `Angonaloy` row. Do not rely only on `on conflict do nothing`.
 - Update `scripts/verify-supabase-baseline.mjs` and its tests so all active SQL migrations are applied in filename order. Update runtime-table/RLS assertions for `warehouses` and verify the default-setting function is unavailable to browser roles.
 
 ## API write safety

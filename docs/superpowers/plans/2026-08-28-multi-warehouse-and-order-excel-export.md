@@ -128,9 +128,9 @@ describe("warehouse migration", () => {
     }
   });
 
-  it("seeds the Mango Lover default warehouse", async () => {
+  it("seeds the Angonaloy default warehouse", async () => {
     const sql = await readFile(migrationPath, "utf8");
-    expect(sql).toContain("Mango Lover");
+    expect(sql).toContain("Angonaloy");
   });
 });
 ```
@@ -196,7 +196,7 @@ create index social_inbox_orders_org_warehouse_idx on public.social_inbox_orders
 
 -- Seed the single default warehouse for the existing workspace.
 insert into public.warehouses (org_id, name, is_default)
-select distinct org_id, 'Mango Lover', true
+select distinct org_id, 'Angonaloy', true
 from public.user_roles
 where org_id is not null
 on conflict do nothing;
@@ -1909,7 +1909,7 @@ import {
   type ExportableOrder,
 } from "@/lib/orderExcelExport";
 
-const warehouseNames = { "wh-1": "Mango Lover", "wh-2": "Rajshahi Mango" };
+const warehouseNames = { "wh-1": "Angonaloy", "wh-2": "Rajshahi Mango" };
 
 const dispatched: ExportableOrder = {
   id: "o1",
@@ -1944,7 +1944,7 @@ describe("order excel export rows", () => {
   it("maps a dispatched order to one row, Bangla intact", () => {
     expect(buildOrderExportRows([dispatched], warehouseNames)).toEqual([
       ["#S1001", "নূর করিম", "01712345678", "বাড়ি ১২, রোড ৩, ধানমন্ডি, ঢাকা",
-        "Himsagar Mango (5kg) x2", 2, 10, 2400, "Mango Lover", 998877],
+        "Himsagar Mango (5kg) x2", 2, 10, 2400, "Angonaloy", 998877],
     ]);
   });
 });
@@ -2002,7 +2002,7 @@ describe("order excel export edge cases", () => {
   it("names the file by date, and by warehouse when one is given", () => {
     const date = new Date("2026-08-28T10:00:00Z");
     expect(orderExportFileName(date)).toBe("orders-2026-08-28.xlsx");
-    expect(orderExportFileName(date, "Mango Lover")).toBe("orders-mango-lover-2026-08-28.xlsx");
+    expect(orderExportFileName(date, "Angonaloy")).toBe("orders-angonaloy-2026-08-28.xlsx");
   });
 });
 ```
@@ -2589,7 +2589,7 @@ export function WarehouseDialog({
             </div>
 
             <div className="grid gap-3 p-5">
-              <BuiInput label="Name" value={name} onChange={setName} placeholder="Mango Lover" isRequired />
+              <BuiInput label="Name" value={name} onChange={setName} placeholder="Angonaloy" isRequired />
               <BuiInput label="Address" value={address} onChange={setAddress} placeholder="Street, city" />
               <BuiInput label="Contact person" value={contactPerson} onChange={setContactPerson} />
               <BuiInput label="Phone" value={phone} onChange={setPhone} placeholder="01XXXXXXXXX" />

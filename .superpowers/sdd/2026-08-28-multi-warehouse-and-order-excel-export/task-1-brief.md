@@ -58,9 +58,9 @@ describe("warehouse migration", () => {
     }
   });
 
-  it("seeds the Mango Lover default warehouse", async () => {
+  it("seeds the Angonaloy default warehouse", async () => {
     const sql = await readFile(migrationPath, "utf8");
-    expect(sql).toContain("Mango Lover");
+    expect(sql).toContain("Angonaloy");
   });
 });
 ```
@@ -126,7 +126,7 @@ create index social_inbox_orders_org_warehouse_idx on public.social_inbox_orders
 
 -- Seed the single default warehouse for the existing workspace.
 insert into public.warehouses (org_id, name, is_default)
-select distinct org_id, 'Mango Lover', true
+select distinct org_id, 'Angonaloy', true
 from public.user_roles
 where org_id is not null
 on conflict do nothing;
@@ -171,4 +171,3 @@ git commit -m "feat: add warehouses table and warehouse/weight columns"
 ```
 
 ---
-

@@ -501,7 +501,7 @@ Storefront:
 - Modify: `.env.example`
 - Modify: `README.md` only if the existing setup section is the established location for environment/runbook links
 - Create: `src/test/orderProtectionVerification.test.ts`
-- Modify: `src/test/mangoLoverDeploymentBoundary.test.ts` or the closest existing deployment-boundary test if needed
+- Modify: `src/test/angonaloyDeploymentBoundary.test.ts` or the closest existing deployment-boundary test if needed
 - Modify: storefront test coverage from Tasks 6-7
 
 **Interfaces:**
@@ -549,7 +549,7 @@ Storefront:
 
 - [ ] **Step 7: Commit documentation and verification artifacts.**
 
-  In Merchant Suite, commit with `git add docs/runbooks/order-protection.md src/test/orderProtectionVerification.test.ts .env.example src/test/mangoLoverDeploymentBoundary.test.ts && git commit -m "docs: add order protection rollout runbook"`. Commit any storefront verification-only changes in the storefront repository with a separate conventional commit.
+  In Merchant Suite, commit with `git add docs/runbooks/order-protection.md src/test/orderProtectionVerification.test.ts .env.example src/test/angonaloyDeploymentBoundary.test.ts && git commit -m "docs: add order protection rollout runbook"`. Commit any storefront verification-only changes in the storefront repository with a separate conventional commit.
 
 ## Completion Criteria
 

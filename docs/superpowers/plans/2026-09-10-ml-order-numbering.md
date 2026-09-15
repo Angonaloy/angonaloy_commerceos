@@ -1,4 +1,4 @@
-# Mango Lover Order Numbering Implementation Plan
+# Angonaloy Order Numbering Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -100,7 +100,7 @@ Run `npm test -- src/test/mlOrderNumberingMigration.test.ts`. Expected result: P
 
 ```bash
 git add supabase/migrations src/test/mlOrderNumberingMigration.test.ts
-git commit -m "feat: add atomic Mango Lover order allocator"
+git commit -m "feat: add atomic Angonaloy order allocator"
 ```
 
 ---

@@ -40,7 +40,7 @@ describe("A4 invoice HTML", () => {
     expect(html).toContain("width: 210mm;");
     expect(html).toContain("height: 297mm;");
     expect(html).toContain('<section class="invoice-page">');
-    expect(html).toContain('/mango-lover-print-logo.png');
+    expect(html).toContain('/angonaloy-print-logo.png');
     expect(html).toContain('<div class="invoice-title">INVOICE</div>');
     expect(html).toContain("#ML567907");
     expect(html).toContain("Sep 06, 2026");

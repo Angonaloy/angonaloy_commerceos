@@ -32,7 +32,7 @@
 ```text
 $ npx vitest run src/test/warehouseRouting.test.ts
 
- RUN  v3.2.4 /Users/noorkarimmehedi/conductor/workspaces/mangoloverbd_commerceos/warehouse-excel
+ RUN  v3.2.4 /Users/noorkarimmehedi/conductor/workspaces/angonaloy_commerceos/warehouse-excel
 
  ✓ src/test/warehouseRouting.test.ts (15 tests) 2ms
 

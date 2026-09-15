@@ -62,7 +62,7 @@ describe("warehouse migration", () => {
 
     expect(sql).toMatch(/unique index warehouses_org_default_idx/);
     expect(sql).toMatch(/where is_default and deleted_at is null/);
-    expect(sql).toContain("mango lover");
+    expect(sql).toContain("angonaloy");
     expect(sql).toMatch(/create function public\.set_default_warehouse\(p_org_id uuid, p_warehouse_id uuid\)/);
     expect(sql).toMatch(/for update/);
     expect(sql).toMatch(/order by warehouse\.id\s+for update/);

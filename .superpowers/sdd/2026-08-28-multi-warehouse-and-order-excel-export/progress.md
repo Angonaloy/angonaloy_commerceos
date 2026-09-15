@@ -1,4 +1,4 @@
-# SDD ledger — plan: /Users/noorkarimmehedi/conductor/repos/mangoloverbd_commerceos/docs/superpowers/plans/2026-08-28-multi-warehouse-and-order-excel-export.md
+# SDD ledger — plan: /Users/noorkarimmehedi/conductor/repos/angonaloy_commerceos/docs/superpowers/plans/2026-08-28-multi-warehouse-and-order-excel-export.md
 
 Base commit: 0815349 chore: establish canonical Supabase schema baseline
 

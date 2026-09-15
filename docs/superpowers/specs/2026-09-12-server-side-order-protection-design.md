@@ -1,7 +1,7 @@
 # Server-Side Storefront Order Protection Design
 
 **Date:** 2026-09-12
-**Repositories:** `mangoloverbd/mangoloverbd_commerceos` and `Angonaloy/angonaloy_storefront`
+**Repositories:** `Angonaloy/angonaloy_commerceos` and `Angonaloy/angonaloy_storefront`
 
 ## Goal
 
