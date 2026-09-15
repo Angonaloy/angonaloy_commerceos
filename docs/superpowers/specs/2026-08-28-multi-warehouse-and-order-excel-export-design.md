@@ -10,7 +10,7 @@ The client asked for two things over WhatsApp on 2026-08-28:
 
 1. **Unlimited warehouses**, with products assigned per warehouse, so that when an order
    arrives the system automatically knows which warehouse that order's product belongs to.
-   Their stated setup: one main warehouse named **Mango Lover** holding every non-mango
+   Their stated setup: one main warehouse named **Angonaloy** holding every non-mango
    product, with additional mango warehouses opened seasonally.
 2. **An Excel export of confirmed orders** containing customer name, phone, address,
    weight in kg, product, and Steadfast ID.
@@ -104,7 +104,7 @@ Added columns:
 the variant the customer agreed to. Existing items without it keep working.
 
 Migrations follow the canonical baseline pattern in `supabase/migrations/`. On first run, a
-warehouse named **Mango Lover** is created and flagged default.
+warehouse named **Angonaloy** is created and flagged default.
 
 ## Server: warehouse resolution
 
@@ -221,7 +221,7 @@ can tell the difference between "put here on purpose" and "landed here by defaul
 
 
 **Products page** — a warehouse picker per product, plus multi-select with a bulk "Assign to
-warehouse" action, so assigning every non-mango product to Mango Lover is a few clicks. The
+warehouse" action, so assigning every non-mango product to Angonaloy is a few clicks. The
 product form gains a weight field, and each variant row gains its own weight field.
 
 **Orders table** (`src/components/OrdersTable.tsx`) — a Warehouse column and an inline warehouse

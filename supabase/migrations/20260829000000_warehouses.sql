@@ -68,11 +68,11 @@ on public.orders (org_id, warehouse_id, created_at desc);
 create index social_inbox_orders_org_warehouse_idx
 on public.social_inbox_orders (org_id, warehouse_id, created_at desc);
 
--- Ensure every existing workspace has an active Mango Lover warehouse before
+-- Ensure every existing workspace has an active Angonaloy warehouse before
 -- choosing one default. The two-step repair avoids transient partial-index
 -- conflicts when an existing default is replaced.
 insert into public.warehouses (org_id, name, is_default)
-select orgs.org_id, 'Mango Lover', false
+select orgs.org_id, 'Angonaloy', false
 from (
   select distinct org_id
   from public.user_roles
@@ -82,7 +82,7 @@ where not exists (
   select 1
   from public.warehouses as warehouse
   where warehouse.org_id = orgs.org_id
-    and warehouse.name = 'Mango Lover'
+    and warehouse.name = 'Angonaloy'
     and warehouse.deleted_at is null
 );
 
@@ -102,7 +102,7 @@ with ranked_warehouses as (
     row_number() over (
       partition by warehouse.org_id
       order by
-        case when warehouse.name = 'Mango Lover' then 0 else 1 end,
+        case when warehouse.name = 'Angonaloy' then 0 else 1 end,
         warehouse.created_at,
         warehouse.id
     ) as default_rank

@@ -375,14 +375,14 @@ index da9c4ad..c30229d 100644
 +      ...productIds.flatMap((productSlug) => buildProductCacheUrls({
 +        publicDomain: "merchant.example",
 +        orgId: "org-1",
-+        handle: "mango-lover",
++        handle: "angonaloy",
 +        productSlug,
 +        listChanged: false,
 +      })),
 +      ...buildProductCacheUrls({
 +        publicDomain: "merchant.example",
 +        orgId: "org-1",
-+        handle: "mango-lover",
++        handle: "angonaloy",
 +        inventoryIds: productIds,
 +        listChanged: false,
 +      }),
@@ -399,10 +399,10 @@ index da9c4ad..c30229d 100644
 +      },
 +    });
 +
-+    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/products/old-product");
-+    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/products/new-product");
-+    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/products/parent-product");
-+    expect(urls).toContain("https://merchant.example/api/public/v1/mango-lover/inventory?ids=old-product,new-product,parent-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/angonaloy/products/old-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/angonaloy/products/new-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/angonaloy/products/parent-product");
++    expect(urls).toContain("https://merchant.example/api/public/v1/angonaloy/inventory?ids=old-product,new-product,parent-product");
 +    expect(JSON.parse(String(requests[0][1]?.body)).files).toEqual(urls);
 +    expect(requests).toHaveLength(1);
 +  });
@@ -450,7 +450,7 @@ index 7169c0a..66fbd76 100644
 +      buildProductCacheUrls({
 +        publicDomain: "merchant.example",
 +        orgId: "org-1",
-+        handle: "mango-lover",
++        handle: "angonaloy",
 +        inventoryIds: ["old-product", "new/product"],
 +        listChanged: false,
 +      }),

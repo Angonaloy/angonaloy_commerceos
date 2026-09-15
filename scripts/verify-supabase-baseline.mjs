@@ -365,7 +365,7 @@ rollback;
 `;
 
 function verifyFreshDatabase(runNumber) {
-  const workDirectory = mkdtempSync(join(tmpdir(), "mangoloverbd-baseline-"));
+  const workDirectory = mkdtempSync(join(tmpdir(), "angonaloy-baseline-"));
   const dataDirectory = join(workDirectory, "data");
   const socketDirectory = join(workDirectory, "socket");
   const migrationCopy = join(workDirectory, "baseline.sql");

@@ -18,7 +18,7 @@ Replace invoice PDF downloads with a native browser print flow and redesign the 
 
 Use the approved **Bold Shipping Style**:
 
-- A full-width black header with the Mango Lover identity on the left and `INVOICE` plus the order number on the right.
+- A full-width black header with the Angonaloy identity on the left and `INVOICE` plus the order number on the right.
 - Strong black rules, compact uppercase labels, bold values, and a clear black-and-white hierarchy inspired by the shipping sticker.
 - A print-safe monochrome presentation, except where the browser or printer applies its own print settings.
 - No decorative card shadows, rounded panels, or fragile badge.
@@ -27,7 +27,7 @@ Use the approved **Bold Shipping Style**:
 
 Each invoice contains:
 
-1. **Header:** the existing `/mango-lover-print-logo.png` asset rendered in monochrome, `INVOICE`, and order number.
+1. **Header:** the existing `/angonaloy-print-logo.png` asset rendered in monochrome, `INVOICE`, and order number.
 2. **Order metadata:** invoice date, order status, courier, and CN/tracking value.
 3. **Barcode:** Code 128 generated locally from the consignment ID, falling back to the tracking code. If neither exists, show `NOT ASSIGNED` and omit the barcode without blocking invoice printing.
 4. **Customer:** customer name, phone number with whitespace removed, and full cleaned delivery address.

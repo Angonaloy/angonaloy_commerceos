@@ -462,7 +462,7 @@ Key routing rules:
 This repository is the dedicated Merchant-Suite deployment for **Angonaloy**. It has one Supabase project, one analytics setup, one branded operations dashboard, and one intended storefront. Do not add merchant selection, tenant provisioning, or shared multi-merchant workflows.
 
 ### Setup for Angonaloy (operator)
-1. **Fork & brand.** Fork this Merchant-Suite repository for Angonaloy and use `github.com/Angonaloy/angonaloy_storefront` (originally forked from `noorkarimmehedi/e-commerce`) as its dedicated storefront. Use the brand's Facebook page as the primary social reference: `https://www.facebook.com/WeAreMangoLover`.
+1. **Fork & brand.** Fork this Merchant-Suite repository for Angonaloy and use `github.com/Angonaloy/angonaloy_storefront` (originally forked from `noorkarimmehedi/e-commerce`) as its dedicated storefront. Use the configured Angonaloy social accounts as the primary social reference.
 2. **Create the accounts.** Use the Angonaloy **Supabase** project and the deployment's analytics project. Keep all credentials in environment variables or the existing server-side settings flow; never commit secrets.
 3. **Fill keys & deploy.** Enter Angonaloy's Supabase, AI, courier, Shopify, Meta, fraud, analytics, Vercel, and storefront values into the deployment configuration, then deploy the Suite at the approved Angonaloy URL.
 4. **Create the admin account.** The first Angonaloy admin login receives the existing admin role. Additional staff accounts may be invited and share the same workspace.

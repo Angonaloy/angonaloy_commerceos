@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Print selected Dashboard orders as scannable 3-by-4-inch Mango Lover thermal shipping labels without changing invoice downloads or Inbox Orders printing.
+**Goal:** Print selected Dashboard orders as scannable 3-by-4-inch Angonaloy thermal shipping labels without changing invoice downloads or Inbox Orders printing.
 
 **Architecture:** Add a focused shipping-label utility that resolves CN values, generates Code 128 SVG barcodes, builds escaped print HTML, validates the whole selection, and opens the existing hidden-iframe print flow. Wire only the Dashboard orders table to this utility. Reuse the API's existing item enrichment, which already supplies variant-first, product-fallback `weight_kg` values.
 
@@ -23,7 +23,7 @@
 - Create `src/utils/shippingLabelPrinter.ts`: label data types, validation, barcode SVG generation, escaped HTML generation, and iframe printing.
 - Create `src/test/shippingLabelPrinter.test.ts`: unit coverage for CN resolution, validation, content, escaping, barcode, item weights, dimensions, and pagination.
 - Modify `src/components/OrdersTable.tsx`: expose enriched item weight in the local type and route Dashboard Print to the new utility with a warning toast.
-- Add `public/mango-lover-print-logo.png`: browser-compatible monochrome-capable source converted from the supplied AVIF.
+- Add `public/angonaloy-print-logo.png`: browser-compatible monochrome-capable source converted from the supplied AVIF.
 - Modify `package.json` and `package-lock.json`: add `jsbarcode` and its TypeScript declarations.
 
 ---
@@ -33,7 +33,7 @@
 **Files:**
 - Create: `src/utils/shippingLabelPrinter.ts`
 - Create: `src/test/shippingLabelPrinter.test.ts`
-- Create: `public/mango-lover-print-logo.png`
+- Create: `public/angonaloy-print-logo.png`
 - Modify: `package.json`
 - Modify: `package-lock.json`
 
@@ -78,7 +78,7 @@ Run:
 ```bash
 npm install jsbarcode
 npm install --save-dev @types/jsbarcode
-sips -s format png "$HOME/Downloads/imgi_67_mango-lover-desktop-header-footer-img-700x137.avif" --out public/mango-lover-print-logo.png
+sips -s format png "$HOME/Downloads/angonaloy-header-footer-img-700x137.avif" --out public/angonaloy-print-logo.png
 ```
 
 - [x] **Step 4: Implement the generator**
@@ -105,7 +105,7 @@ Expected: PASS.
 - [x] **Step 6: Commit the generator**
 
 ```bash
-git add package.json package-lock.json public/mango-lover-print-logo.png src/utils/shippingLabelPrinter.ts src/test/shippingLabelPrinter.test.ts
+git add package.json package-lock.json public/angonaloy-print-logo.png src/utils/shippingLabelPrinter.ts src/test/shippingLabelPrinter.test.ts
 git commit -m "feat: add thermal shipping label printer"
 ```
 
