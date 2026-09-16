@@ -12,13 +12,13 @@ function sectionBetween(start: string, end: string) {
   return source.slice(sectionStart, sectionEnd);
 }
 
-describe("canonical ML order-number routes", () => {
+describe("canonical AG order-number routes", () => {
   it("allocates and validates numbers through the restricted database RPC", () => {
     const helper = sectionBetween("async function getNextManualOrderNumber", "async function getProductStockMap");
 
     expect(helper).toContain('async function getNextManualOrderNumber(orgId)');
-    expect(helper).toContain('.rpc("next_ml_order_number")');
-    expect(helper).toContain("/^ML-\\d+$/.test(data)");
+    expect(helper).toContain('.rpc("next_order_number")');
+    expect(helper).toContain("/^AG-\\d+$/.test(data)");
   });
 
   it("forces the canonical number in every order creation path", () => {

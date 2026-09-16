@@ -1490,9 +1490,9 @@ async function getNextManualOrderNumber(orgId) {
   if (!isValidOrgId(orgId)) throw new Error("Invalid workspace for order number allocation");
 
   const supabase = getServiceSupabase();
-  const { data, error } = await supabase.rpc("next_ml_order_number");
+  const { data, error } = await supabase.rpc("next_order_number");
   if (error) throw error;
-  if (typeof data !== "string" || !/^ML-\d+$/.test(data)) {
+  if (typeof data !== "string" || !/^AG-\d+$/.test(data)) {
     throw new Error("Invalid order number returned by allocator");
   }
   return data;

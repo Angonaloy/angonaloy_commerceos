@@ -7,11 +7,11 @@ describe("manual order numbering", () => {
 
   it("uses the atomic canonical order-number allocator", () => {
     expect(source).toContain("async function getNextManualOrderNumber(orgId)");
-    expect(source).toContain('.rpc("next_ml_order_number")');
-    expect(source).toContain("/^ML-\\d+$/.test(data)");
+    expect(source).toContain('.rpc("next_order_number")');
+    expect(source).toContain("/^AG-\\d+$/.test(data)");
   });
 
-  it("creates manual orders with canonical ML-<seq> numbers", () => {
+  it("creates manual orders with canonical AG-<seq> numbers", () => {
     const createRoute = source.slice(
       source.indexOf('app.post("/api/orders"'),
       source.indexOf('app.patch("/api/orders/:id"')
