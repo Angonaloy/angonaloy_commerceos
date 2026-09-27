@@ -40,6 +40,7 @@ import {
   type ProductsResponse,
   productPriceDisplayLines,
   productPriceSortValue,
+  realVariants,
 } from "./products/shared";
 import { MobileProductCards } from "@/components/MobileProductCards";
 
@@ -73,7 +74,8 @@ function stockStatus(qty: number): "out" | "low" | "ok" {
 }
 
 function effectiveStock(p: Product): number {
-  if (p.variants.length > 0) return p.variants.reduce((s, v) => s + v.stock_quantity, 0);
+  const variants = realVariants(p);
+  if (variants.length > 0) return variants.reduce((s, v) => s + v.stock_quantity, 0);
   return p.stock_quantity;
 }
 
@@ -179,7 +181,7 @@ function VariantChip({
 // ─ Variant chips strip (stacked list) ────────────────────────────────────────
 
 function VariantStrip({ product }: { product: Product }) {
-  const { variants } = product;
+  const variants = realVariants(product);
 
   if (variants.length === 0) {
     return (
@@ -366,7 +368,7 @@ function ProductsDataTable({ products, warehouses, isAdmin, isLoading, onAddProd
                   <a href={product.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} data-testid={`link-product-${product.id}`} className="max-w-[210px] truncate text-[11px] leading-4 text-text-tertiary transition-colors hover:text-text-secondary">{product.url.replace(/^https?:\/\//, "").substring(0, 42)}</a>
                 )}
               </div>
-              {product.variants.length === 0 && (
+              {realVariants(product).length === 0 && (
                 <div className="flex items-center gap-1.5">
                   <span className={cn("h-[5px] w-[5px] rounded-full", STATUS_TOKEN[ss].dot)} />
                   <span className={cn("text-[11px]", STATUS_TOKEN[ss].text, ss !== "ok" && "font-medium")}>{ss === "out" ? "Out of stock" : `${stock} in stock`}</span>
@@ -527,7 +529,7 @@ function ProductsDataTable({ products, warehouses, isAdmin, isLoading, onAddProd
       const p = row.original;
       return p.name.toLowerCase().includes(q)
         || (p.url ?? "").toLowerCase().includes(q)
-        || p.variants.some((v) => attrLabel(v.attributes).toLowerCase().includes(q));
+        || realVariants(p).some((v) => attrLabel(v.attributes).toLowerCase().includes(q));
     },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -812,7 +814,8 @@ export default function Products() {
   })();
   const totalStock = allProducts.reduce((a, p) => a + effectiveStock(p), 0);
   const outCount = allProducts.reduce((a, p) => {
-    if (p.variants.length > 0) return a + p.variants.filter(v => v.stock_quantity === 0).length;
+    const variants = realVariants(p);
+    if (variants.length > 0) return a + variants.filter(v => v.stock_quantity === 0).length;
     return a + (p.stock_quantity === 0 ? 1 : 0);
   }, 0);
   const totalCog = allProducts.reduce((a, p) => a + (p.cog || 0), 0);

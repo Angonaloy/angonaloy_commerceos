@@ -33,6 +33,7 @@ import {
 } from "./orderItemParsing.js";
 import { buildCustomers, summarizeCustomers } from "./customers.js";
 import { toPublicProduct, toPublicInventoryEntry, PublicInventoryResponseSchema, PublicInventoryEntrySchema } from "./publicCatalog.js";
+import { ensureDefaultProductVariant, isDefaultVariantAttributes } from "./defaultProductVariant.js";
 import {
   HANDLE_REGEX,
   RESERVED_HANDLES,
@@ -1510,7 +1511,36 @@ async function getProductStockMap(orgId, productIds) {
 }
 
 async function saveProductStock(orgId, productId, quantity) {
-  return saveSettings({ [`${orgId}:product_stock:${productId}`]: Math.max(0, parseInt(quantity, 10) || 0) });
+  const normalized = Math.max(0, parseInt(quantity, 10) || 0);
+  const result = await saveSettings({ [`${orgId}:product_stock:${productId}`]: normalized });
+  // Keep a simple product's single default variant in sync — checkout reads
+  // and decrements stock on product_variants.
+  const supabase = getServiceSupabase();
+  const { data: variants, error } = await supabase
+    .from("product_variants")
+    .select("id, attributes")
+    .eq("product_id", productId)
+    .eq("org_id", orgId);
+  if (error) throw error;
+  if (variants?.length === 1 && isDefaultVariantAttributes(variants[0].attributes)) {
+    const { error: updateError } = await supabase
+      .from("product_variants")
+      .update({ stock_quantity: normalized })
+      .eq("id", variants[0].id)
+      .eq("product_id", productId)
+      .eq("org_id", orgId);
+    if (updateError) throw updateError;
+  }
+  return result;
+}
+
+// Guarantees the product has at least one variant (a default one if needed).
+// Stock defaults to the legacy app_settings value unless stockQuantity is given.
+async function ensureDefaultVariantFor(supabase, orgId, productId, opts = {}) {
+  return ensureDefaultProductVariant(supabase, orgId, productId, {
+    ...opts,
+    getLegacyStock: async () => (await getProductStockMap(orgId, [productId]))[productId],
+  });
 }
 
 async function loadProductImagesMap(supabase, orgId, productIds) {
@@ -5304,6 +5334,7 @@ app.post("/api/order-chat/apply", rateLimitAI, async (req, res) => {
       generateProductEmbedding, checkFraudStatus, normalizeBdPhone,
       sendBulkSms, requestStorefrontSeoRefresh,
       getOrgSettings: (k, keys) => getOrgSettings(k, keys),
+      ensureDefaultProductVariant: (supabase, orgId, productId, opts) => ensureDefaultVariantFor(supabase, orgId, productId, opts),
     };
     const { before, after } = await executeAiAction({ supabase, orgId, userId: user.id, tool, args, helpers });
     await supabase.from("ai_action_log").insert({
@@ -10809,7 +10840,9 @@ app.get("/api/products", async (req, res) => {
       products: (data || []).map((p) => ({
         ...p,
         image_url: imagesMap[p.id]?.[0]?.url || p.image_url,
-        stock_quantity: stockMap[p.id] || 0,
+        stock_quantity: variantsMap[p.id]?.length === 1 && isDefaultVariantAttributes(variantsMap[p.id][0].attributes)
+          ? variantsMap[p.id][0].stock_quantity || 0
+          : stockMap[p.id] || 0,
         variants: variantsMap[p.id] || [],
         images: imagesMap[p.id] || [],
       })),
@@ -11839,9 +11872,25 @@ app.post("/api/products/save", async (req, res) => {
       }
     }
 
+    let variantInsertFailed = false;
     if (variantRows.length > 0) {
       const { error: vErr } = await supabase.from("product_variants").insert(variantRows);
-      if (vErr) console.error("[products/save] variant insert error:", vErr.message);
+      if (vErr) {
+        variantInsertFailed = true;
+        console.error("[products/save] variant insert error:", vErr.message);
+      }
+    }
+
+    // Every product needs at least one variant for checkout; give products
+    // saved without variant rows a default variant.
+    const productsWithVariants = new Set(variantInsertFailed ? [] : variantRows.map((v) => v.product_id));
+    for (let i = 0; i < data.length; i++) {
+      const savedProduct = data[i];
+      if (productsWithVariants.has(savedProduct.id)) continue;
+      const sourceProduct = sourceProducts[i];
+      await ensureDefaultVariantFor(supabase, orgId, savedProduct.id, {
+        stockQuantity: sourceProduct.stock_quantity,
+      });
     }
 
     // Generate embeddings in background (non-blocking)
@@ -12274,6 +12323,7 @@ app.patch("/api/products/:id", async (req, res) => {
       if (result.error) throw result.error;
       data = result.data;
     }
+    await ensureDefaultVariantFor(supabase, orgId, req.params.id);
     if (hasStockUpdate) await saveProductStock(orgId, req.params.id, req.body.stock_quantity);
     data = { ...data, stock_quantity: hasStockUpdate ? Math.max(0, parseInt(req.body.stock_quantity, 10) || 0) : 0 };
 
@@ -12360,6 +12410,16 @@ app.post("/api/products/publish-all", async (req, res) => {
     if (!user) return res.status(401).json({ error: "Unauthorized" });
     const supabase = getServiceSupabase();
     const { orgId } = await getUserOrg(supabase, user.id);
+
+    // Ensure every product about to go live has a sellable variant row before
+    // it becomes visible, so a published product is never missing one.
+    const { data: pending, error: pendingError } = await supabase
+      .from("products")
+      .select("id")
+      .eq("org_id", orgId)
+      .eq("published", false);
+    if (pendingError) throw pendingError;
+    await Promise.all((pending || []).map((product) => ensureDefaultVariantFor(supabase, orgId, product.id)));
 
     const { data, error } = await supabase
       .from("products")
@@ -12706,16 +12766,39 @@ app.post("/api/products/:id/variants", async (req, res) => {
     const sanitised = Object.fromEntries(
       Object.entries(attributes).map(([k, v]) => [k.trim().toLowerCase(), String(v).trim()])
     );
+    const variantFields = {
+      attributes: sanitised,
+      cog: parseFloat(cog) || 0,
+      stock_quantity: Math.max(0, parseInt(stock_quantity, 10) || 0),
+      price_adjustment: parseFloat(price_adjustment) || 0,
+      weight_kg: parseOptionalWeightKg(weight_kg),
+    };
+    const { data: existingVariants, error: existingError } = await supabase
+      .from("product_variants")
+      .select("id, attributes")
+      .eq("product_id", req.params.id)
+      .eq("org_id", orgId);
+    if (existingError) throw existingError;
+    // A lone default variant becomes the first real option instead of
+    // lingering alongside it.
+    if (existingVariants?.length === 1 && isDefaultVariantAttributes(existingVariants[0].attributes)) {
+      const { data, error } = await supabase
+        .from("product_variants")
+        .update(variantFields)
+        .eq("id", existingVariants[0].id)
+        .eq("product_id", req.params.id)
+        .eq("org_id", orgId)
+        .select()
+        .single();
+      if (error) throw error;
+      return res.json({ variant: data });
+    }
     const { data, error } = await supabase
       .from("product_variants")
       .insert({
         product_id: req.params.id,
         org_id: orgId,
-        attributes: sanitised,
-        cog: parseFloat(cog) || 0,
-        stock_quantity: Math.max(0, parseInt(stock_quantity, 10) || 0),
-        price_adjustment: parseFloat(price_adjustment) || 0,
-        weight_kg: parseOptionalWeightKg(weight_kg),
+        ...variantFields,
       })
       .select()
       .single();
@@ -12775,6 +12858,7 @@ app.delete("/api/products/:id/variants/:variantId", async (req, res) => {
       .eq("product_id", req.params.id)
       .eq("org_id", orgId);
     if (error) throw error;
+    await ensureDefaultVariantFor(supabase, orgId, req.params.id, { stockQuantity: 0 });
     return res.json({ success: true });
   } catch (e) {
     return res.status(500).json({ error: e.message });

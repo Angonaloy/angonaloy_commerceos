@@ -58,6 +58,18 @@ export type ProductsResponse = {
   products: Product[];
 };
 
+// A default variant (empty attributes) is created server-side for products
+// without real variants. It is hidden in the dashboard: such products are
+// managed through the product-level Stock field.
+export function isDefaultVariant(variant: ProductVariant): boolean {
+  const attributes = variant.attributes as Record<string, string> | null | undefined;
+  return attributes == null || Object.keys(attributes).length === 0;
+}
+
+export function realVariants(product: Product): ProductVariant[] {
+  return (product.variants ?? []).filter((variant) => !isDefaultVariant(variant));
+}
+
 function formatTaka(n: number | null | undefined) {
   if (n == null) return "—";
   return "৳" + Number(n).toLocaleString("en-BD", { minimumFractionDigits: 0 });
@@ -77,10 +89,11 @@ export function productPriceDisplay(product: Product) {
 }
 
 export function productPriceDisplayLines(product: Product) {
-  if (product.variants.length === 0) return [formatTaka(product.selling_price)];
+  const variants = realVariants(product);
+  if (variants.length === 0) return [formatTaka(product.selling_price)];
   if (product.selling_price == null) return ["—"];
 
-  const prices = product.variants
+  const prices = variants
     .map((variant) => variantPrice(product, variant))
     .filter((price): price is number => price != null)
     .filter((price, index, all) => all.indexOf(price) === index)
@@ -90,9 +103,10 @@ export function productPriceDisplayLines(product: Product) {
 }
 
 export function productPriceSortValue(product: Product) {
-  if (product.variants.length === 0) return product.selling_price ?? -1;
+  const variants = realVariants(product);
+  if (variants.length === 0) return product.selling_price ?? -1;
   if (product.selling_price == null) return -1;
-  return Math.min(...product.variants.map((variant) => variantPrice(product, variant) ?? -1));
+  return Math.min(...variants.map((variant) => variantPrice(product, variant) ?? -1));
 }
 
 export type SelectedImage = {

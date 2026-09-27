@@ -20,6 +20,7 @@ import {
   BUI_TEXTAREA_CLS,
   FormSectionLabel,
   ProductImageManager,
+  realVariants,
   variantPriceDisplay,
 } from "./products/shared";
 
@@ -210,7 +211,7 @@ function ProductVariantsEditor({ product }: { product: Product }) {
         <p className="text-[12px] text-black/40">Click a product row to manage variant stock, cost, and price adjustments here.</p>
       </div>
       <div className="space-y-2">
-        {product.variants.length > 0 ? product.variants.map((variant) => (
+        {realVariants(product).length > 0 ? realVariants(product).map((variant) => (
           <VariantEditorRow key={variant.id} product={product} variant={variant} />
         )) : (
           <p className="rounded-[12px] bg-black/[0.03] px-3 py-4 text-[13px] text-black/45">No variants yet.</p>
@@ -232,7 +233,8 @@ function EditForm({ product }: { product: Product }) {
   const [sellingPrice, setSellingPrice] = useState(product.selling_price == null ? "" : String(product.selling_price));
   const [compareAtPrice, setCompareAtPrice] = useState(product.compare_at_price == null ? "" : String(product.compare_at_price));
   const [cog, setCog] = useState(String(product.cog ?? 0));
-  const [stock, setStock] = useState(String(product.stock_quantity ?? 0));
+  const initialStock = String(product.stock_quantity ?? 0);
+  const [stock, setStock] = useState(initialStock);
   const [weight, setWeight] = useState(product.weight_kg == null ? "" : String(product.weight_kg));
   const [warehouseId, setWarehouseId] = useState(product.warehouse_id || "");
   const [published, setPublished] = useState(product.published === true);
@@ -254,7 +256,9 @@ function EditForm({ product }: { product: Product }) {
           selling_price: sellingPrice ? parseFloat(sellingPrice) || 0 : null,
           compare_at_price: compareAtPrice ? parseFloat(compareAtPrice) || 0 : null,
           cog: parseFloat(cog) || 0,
-          stock_quantity: Math.max(0, parseInt(stock, 10) || 0),
+          // Only send stock when the merchant edited it, so a stale page-load
+          // value never overwrites stock changed since (e.g. by checkout).
+          ...(stock !== initialStock ? { stock_quantity: Math.max(0, parseInt(stock, 10) || 0) } : {}),
           weight_kg: weight === "" ? null : Number(weight),
           warehouse_id: warehouseId || null,
           published,
