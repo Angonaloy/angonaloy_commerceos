@@ -121,6 +121,7 @@ describe("executeAiAction dispatcher", () => {
         update: () => ({ eq: () => ({ eq: () => ({ select: () => ({ single: async () => ({ data: {}, error: null }) }) }) }) }),
       },
       product_variants: {
+        select: () => ({ eq: () => ({ eq: async () => ({ data: [{ id: "v0", attributes: { size: "M" } }], error: null }) }) }),
         insert: (row) => { inserted = row; return { select: () => ({ single: async () => ({ data: { id: "vS", ...row }, error: null }) }) }; },
       },
     });
@@ -141,6 +142,32 @@ describe("executeAiAction dispatcher", () => {
       executeAiAction({ supabase: missingSupabase, orgId: "o", userId: "u", tool: "add_variant",
         args: { product_id: "pX", attributes: "{\"size\":\"S\"}", stock_quantity: 5, cog: null, price_adjustment: null }, helpers: noHelpers }),
     ).rejects.toThrow(/not found/i);
+  });
+
+  it("add_variant replaces a lone default variant instead of adding beside it", async () => {
+    let updated = null;
+    let updatedId = null;
+    let inserted = false;
+    const supabase = fakeSupabase({
+      products: {
+        select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "p1", name: "Basket" }, error: null }) }) }) }),
+      },
+      product_variants: {
+        select: () => ({ eq: () => ({ eq: async () => ({ data: [{ id: "vDefault", attributes: {} }], error: null }) }) }),
+        update: (row) => {
+          updated = row;
+          return { eq: (_c, id) => { updatedId = id; return { eq: () => ({ eq: () => ({ select: () => ({ single: async () => ({ data: { id: "vDefault", ...row }, error: null }) }) }) }) }; } };
+        },
+        insert: () => { inserted = true; return { select: () => ({ single: async () => ({ data: null, error: null }) }) }; },
+      },
+    });
+    const args = { product_id: "p1", attributes: "{\"size\":\"L\"}", stock_quantity: 7, cog: null, price_adjustment: null };
+    const res = await executeAiAction({ supabase, orgId: "org1", userId: "u", tool: "add_variant", args, helpers: noHelpers });
+    expect(inserted).toBe(false);
+    expect(updatedId).toBe("vDefault");
+    expect(updated.attributes).toEqual({ size: "L" });
+    expect(updated.org_id).toBe("org1");
+    expect(res.after.variant.id).toBe("vDefault");
   });
 
   it("passes the updated product slug to cache invalidation", async () => {

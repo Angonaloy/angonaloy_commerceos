@@ -1,6 +1,8 @@
 // AI action tool schemas, dispatcher, and helpers for Order Chat mutations.
 // Imported by server/index.js. Pure logic lives here so it's unit-testable.
 
+import { isDefaultVariantAttributes } from "./defaultProductVariant.js";
+
 export const AI_ACTION_TOOLS = [
   {
     type: "function",
@@ -376,7 +378,8 @@ export function buildRecommendation(tool, args, ctx = {}) {
 // ── executeAiAction: the single dispatcher the /apply route calls ──
 // helpers = { saveProductStock, getUniqueProductSlug, purgeProductCache,
 //             generateProductEmbedding, checkFraudStatus, normalizeBdPhone,
-//             sendBulkSms, requestStorefrontSeoRefresh, getOrgSettings }
+//             sendBulkSms, requestStorefrontSeoRefresh, getOrgSettings,
+//             ensureDefaultProductVariant }
 // All queries filter by orgId. Throws if the target row is missing in this org.
 
 export async function executeAiAction({ supabase, orgId, userId, tool, args, helpers = {} }) {
@@ -402,6 +405,7 @@ export async function executeAiAction({ supabase, orgId, userId, tool, args, hel
         if (error) throw error;
         after = data;
       }
+      await helpers.ensureDefaultProductVariant?.(supabase, orgId, args.product_id);
       if (hasStock) await helpers.saveProductStock(orgId, args.product_id, args.fields.stock_quantity);
       const onlyStock = hasStock && Object.keys(update).length === 0;
       const isUnpublishing = update.published === false;
@@ -468,7 +472,16 @@ export async function executeAiAction({ supabase, orgId, userId, tool, args, hel
         stock_quantity: Math.max(0, parseInt(args.stock_quantity, 10) || 0),
         price_adjustment: args.price_adjustment != null ? parseFloat(args.price_adjustment) || 0 : 0,
       };
-      const { data, error } = await supabase.from("product_variants").insert(row).select().single();
+      // A lone default variant (empty attributes) is replaced, not joined, so the
+      // product doesn't show "Default" next to the new option.
+      const { data: existing, error: existingErr } = await supabase.from("product_variants")
+        .select("id, attributes").eq("product_id", args.product_id).eq("org_id", orgId);
+      if (existingErr) throw existingErr;
+      const loneDefault = existing?.length === 1 && isDefaultVariantAttributes(existing[0].attributes) ? existing[0] : null;
+      const { data, error } = loneDefault
+        ? await supabase.from("product_variants").update(row)
+          .eq("id", loneDefault.id).eq("product_id", args.product_id).eq("org_id", orgId).select().single()
+        : await supabase.from("product_variants").insert(row).select().single();
       if (error) throw error;
       return { before: null, after: { product, variant: data } };
     }
@@ -556,6 +569,8 @@ export async function executeAiAction({ supabase, orgId, userId, tool, args, hel
         const { data: vData, error: vErr } = await supabase.from("product_variants").insert(variantRows).select();
         if (vErr) throw vErr;
         variants = vData;
+      } else {
+        await helpers.ensureDefaultProductVariant?.(supabase, orgId, product.id, { stockQuantity: args.stock_quantity });
       }
       if (args.published === true) {
         helpers.purgeProductCache(orgId, { id: product.id, slug: product.slug }, { listChanged: true, warm: true }).catch(() => {});

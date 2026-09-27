@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Check, DotsThree, Package, PencilSimple } from "@phosphor-icons/react";
-import type { Product } from "@/pages/products/shared";
+import { realVariants, type Product } from "@/pages/products/shared";
 import { cn } from "@/lib/utils";
 
 type MobileProductCardsProps = {
@@ -17,12 +17,14 @@ function priceLabel(product: Product) {
 }
 
 function stockLabel(product: Product) {
-  if (product.variants.length) return `${product.variants.reduce((total, variant) => total + variant.stock_quantity, 0)} across ${product.variants.length} variants`;
+  const variants = realVariants(product);
+  if (variants.length) return `${variants.reduce((total, variant) => total + variant.stock_quantity, 0)} across ${variants.length} variants`;
   return `${product.stock_quantity} units`;
 }
 
 function stockClass(product: Product) {
-  const stock = product.variants.length ? product.variants.reduce((total, variant) => total + variant.stock_quantity, 0) : product.stock_quantity;
+  const variants = realVariants(product);
+  const stock = variants.length ? variants.reduce((total, variant) => total + variant.stock_quantity, 0) : product.stock_quantity;
   return stock === 0 ? "text-red-600" : stock <= 5 ? "text-amber-700" : "text-emerald-700";
 }
 
